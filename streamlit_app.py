@@ -4,6 +4,7 @@ from scraper import run_scraper, get_projects, get_procedura_links, get_document
 import time
 import base64
 
+from bs4 import BeautifulSoup  # Add this if not already imported
 
 
 # Function to create a download link for a file
@@ -49,10 +50,17 @@ if search_button and keyword:
         try:
             with st.spinner("Searching for projects..."):
                 # 1) Get project URLs and session
-                project_urls, session = get_projects(keyword)
+                project_urls, session = get_projects(keyword)  # This now handles pagination internally
+                
+                if project_urls:
+                    st.success(f"Found {len(project_urls)} projects across multiple pages")
+                else:
+                    st.warning("No projects found for this keyword.")
+                    st.stop()
+                
                 if max_projects > 0:
                     project_urls = project_urls[:max_projects]
-                st.info(f"Found {len(project_urls)} projects to process")
+                    st.info(f"Processing first {max_projects} projects as requested")
                 
                 # Create a progress bar
                 progress_bar = st.progress(0)
@@ -61,30 +69,40 @@ if search_button and keyword:
                 # Initialize counters and document storage
                 total_procedures = 0
                 total_documents = 0
-                available_documents = []  # New list to store document info
+                available_documents = []
                 
                 # Process each project
                 for i, project_url in enumerate(project_urls):
+                    # Update progress
+                    progress = (i + 1) / len(project_urls)
+                    progress_bar.progress(progress)
                     status_text.text(f"Processing project {i+1}/{len(project_urls)}")
                     
-                    # 2) Get procedure pages - pass the session
-                    procedure_urls = get_procedura_links(project_url, session)
-                    total_procedures += len(procedure_urls)
+                    try:
+                        procedure_urls = get_procedura_links(project_url, session)
+                        total_procedures += len(procedure_urls)
 
-                    for proc_url in procedure_urls:
-                        # 3) Get document links - pass the session
-                        doc_urls = get_document_links(proc_url, session)
-                        total_documents += len(doc_urls)
-                        
-                        # Store document URLs instead of downloading
-                        for doc_url in doc_urls:
-                            available_documents.append({
-                                'url': doc_url,
-                                'project_url': project_url,
-                                'procedure_url': proc_url
-                            })
+                        for proc_url in procedure_urls:
+                            doc_urls = get_document_links(proc_url, session)
+                            total_documents += len(doc_urls)
+                            
+                            for doc_url in doc_urls:
+                                available_documents.append({
+                                    'url': doc_url,
+                                    'project_url': project_url,
+                                    'procedure_url': proc_url
+                                })
+                            
+                            # Add a small delay between requests
+                            time.sleep(2)
+                            
+                    except Exception as e:
+                        st.warning(f"Error processing project {project_url}: {str(e)}")
+                        continue
 
                 # Show final results
+                progress_bar.empty()
+                status_text.empty()
                 st.success(f"""
                 Search completed successfully!
                 - Projects processed: {len(project_urls)}
