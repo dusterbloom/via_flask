@@ -3,9 +3,59 @@ import os
 from scraper import run_scraper, get_projects, get_procedura_links, get_document_links, download_file
 import time
 import base64
+import zipfile
+from datetime import datetime
 
 from bs4 import BeautifulSoup  # Add this if not already imported
 
+def create_zip_of_documents(documents, session):
+    # Create a timestamp for the zip file name
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    zip_path = f"downloads/documents_{timestamp}.zip"
+    
+    # Create a zip file
+    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        # Create a progress bar for downloads
+        download_progress = st.progress(0)
+        status_text = st.empty()
+        
+        for idx, doc in enumerate(documents):
+            try:
+                # Update progress
+                progress = (idx + 1) / len(documents)
+                download_progress.progress(progress)
+                status_text.text(f"Downloading file {idx + 1} of {len(documents)}...")
+                
+                # Download the file
+                response = session.get(doc['url'], stream=True)
+                response.raise_for_status()
+                
+                # Get filename from content disposition or URL
+                filename = None
+                content_disposition = response.headers.get('Content-Disposition')
+                if content_disposition:
+                    import re
+                    matches = re.findall('filename=(.+)', content_disposition)
+                    if matches:
+                        filename = matches[0].strip('"')
+                
+                if not filename:
+                    from urllib.parse import unquote
+                    filename = unquote(doc['url'].split('fileName=')[-1]) if 'fileName=' in doc['url'] else doc['url'].split('/')[-1]
+                
+                # Write the file to the zip
+                zipf.writestr(filename, response.content)
+                
+                time.sleep(0.5)  # Be nice to the server
+                
+            except Exception as e:
+                st.warning(f"Failed to download {doc['url']}: {str(e)}")
+                continue
+        
+        download_progress.empty()
+        status_text.empty()
+    
+    return zip_path
 
 # Function to create a download link for a file
 def get_binary_file_downloader_html(file_path, file_label):
@@ -164,6 +214,27 @@ if search_button and keyword:
                             - Project: [{doc['project_url']}]({doc['project_url']})
                             - Procedure: [{doc['procedure_url']}]({doc['procedure_url']})
                             """)
+                    st.markdown("---")
+                    col1, col2 = st.columns([1, 3])
+                    with col1:
+                        if st.button("Download All Documents"):
+                            try:
+                                with st.spinner("Creating zip file of all documents..."):
+                                    zip_path = create_zip_of_documents(available_documents, session)
+                                
+                                # Create download button for zip file
+                                with open(zip_path, "rb") as fp:
+                                    btn = st.download_button(
+                                        label="Download ZIP File",
+                                        data=fp,
+                                        file_name=os.path.basename(zip_path),
+                                        mime="application/zip"
+                                    )
+                                
+                                st.success(f"All documents have been zipped successfully! Click the button above to download.")
+                                
+                            except Exception as e:
+                                st.error(f"Failed to create zip file: {str(e)}")
                     # Add page navigation buttons
                     col1, col2, col3 = st.columns([1, 2, 1])
                     with col1:
