@@ -54,40 +54,29 @@ if search_button and keyword:
                     project_urls = project_urls[:max_projects]
                 st.info(f"Found {len(project_urls)} projects to process")
                 
-                # Create progress indicators
-                progress_container = st.container()
-                with progress_container:
-                    progress_bar = st.progress(0)
-                    status_text = st.empty()
-                    current_procedure = st.empty()
-                    current_page = st.empty()
-                    doc_counter = st.empty()
+                # Create a progress bar
+                progress_bar = st.progress(0)
+                status_text = st.empty()
 
                 # Initialize counters and document storage
                 total_procedures = 0
                 total_documents = 0
-                available_documents = []
+                available_documents = []  # New list to store document info
                 
                 # Process each project
                 for i, project_url in enumerate(project_urls):
                     status_text.text(f"Processing project {i+1}/{len(project_urls)}")
-                    progress_bar.progress((i + 1) / len(project_urls))
                     
                     # 2) Get procedure pages - pass the session
                     procedure_urls = get_procedura_links(project_url, session)
                     total_procedures += len(procedure_urls)
 
-                    for proc_idx, proc_url in enumerate(procedure_urls):
-                        current_procedure.text(f"Processing procedure {proc_idx + 1}/{len(procedure_urls)}")
-                        
+                    for proc_url in procedure_urls:
                         # 3) Get document links - pass the session
                         doc_urls = get_document_links(proc_url, session)
                         total_documents += len(doc_urls)
                         
-                        # Update document counter
-                        doc_counter.text(f"Documents found so far: {total_documents}")
-                        
-                        # Store document URLs
+                        # Store document URLs instead of downloading
                         for doc_url in doc_urls:
                             available_documents.append({
                                 'url': doc_url,
@@ -101,48 +90,47 @@ if search_button and keyword:
                 - Projects processed: {len(project_urls)}
                 - Total procedures found: {total_procedures}
                 - Total documents available: {total_documents}
-                - Documents in list: {len(available_documents)}  # Debug count
                 """)
 
                                 # Display available documents in a table
-                                # Display available documents in a table
-            if available_documents:
-                st.write("### Available Documents")
-                st.write("Click on the links to open documents in a new tab:")
-                
-                # Create a progress bar for metadata fetching
-                metadata_progress = st.progress(0)
-                metadata_status = st.empty()
-                
-                # Process documents in batches of 10
-                batch_size = 10
-                for i in range(0, len(available_documents), batch_size):
-                    batch = available_documents[i:i+batch_size]
-                    metadata_progress.progress(i / len(available_documents))
-                    metadata_status.text(f"Fetching metadata for documents {i+1}-{min(i+batch_size, len(available_documents))} of {len(available_documents)}")
+                if available_documents:
+                    st.write("### Available Documents")
+                    st.write("Click on the links to open documents in a new tab:")
                     
-                    for doc in batch:
+                    for doc in available_documents:
+                        # Extract document ID from URL
+                        doc_id = doc['url'].split('/')[-1]
+                        # Construct metadata URL
+                        metadata_url = f"https://va.mite.gov.it/it-IT/Oggetti/MetadatoDocumento/{doc_id}"
+                        
                         try:
-                            # Extract filename from URL as fallback
-                            from urllib.parse import unquote
-                            filename = unquote(doc['url'].split('fileName=')[-1]) if 'fileName=' in doc['url'] else doc['url'].split('/')[-1]
+                            # Fetch metadata using the same session
+                            metadata_response = session.get(metadata_url)
+                            metadata_response.raise_for_status()
+                            
+                            # Here you'll need to parse the metadata page to extract the document title
+                            # You can use BeautifulSoup to parse the HTML and extract the document title
+                            # For now, we'll keep the filename as fallback
+                            from bs4 import BeautifulSoup
+                            soup = BeautifulSoup(metadata_response.text, 'html.parser')
+                            
+                            # Find the document title from the metadata table
+                            doc_title = soup.find('td', text='Documento').find_next('td').text.strip()
                             
                             st.markdown(f"""
-                            - [{filename}]({doc['url']})
-                            - Project: [{doc['project_url']}]({doc['project_url']})
-                            - Procedure: [{doc['procedure_url']}]({doc['procedure_url']})
+                            - [{doc_title}]({doc['url']})
+                              - Project: [{doc['project_url']}]({doc['project_url']})
+                              - Procedure: [{doc['procedure_url']}]({doc['procedure_url']})
                             """)
-                            
-                            # Add a small delay between requests
-                            time.sleep(0.1)
-                            
                         except Exception as e:
-                            st.error(f"Error processing document: {str(e)}")
-                            continue
-                
-                # Clear the progress indicators
-                metadata_progress.empty()
-                metadata_status.empty()
-
+                            # Fallback to the URL filename if metadata fetch fails
+                            from urllib.parse import unquote
+                            filename = unquote(doc['url'].split('fileName=')[-1]) if 'fileName=' in doc['url'] else doc['url'].split('/')[-1]
+                            st.markdown(f"""
+                            - [{filename}]({doc['url']})
+                              - Project: [{doc['project_url']}]({doc['project_url']})
+                              - Procedure: [{doc['procedure_url']}]({doc['procedure_url']})
+                            """)
+                        
         except Exception as e:
             st.error(f"An error occurred: {str(e)}")

@@ -20,10 +20,6 @@ HEADERS = {
 }
 
 
-DELAY_BETWEEN_REQUESTS = 2.0  # seconds
-MAX_RETRIES = 3
-REQUEST_TIMEOUT = 30  # seconds
-
 
 if not os.path.exists(DOWNLOAD_FOLDER):
     os.makedirs(DOWNLOAD_FOLDER)
@@ -188,61 +184,22 @@ def get_document_links(procedura_url: str, session=None):
         session.headers.update(HEADERS)
     
     print(f"[INFO] Parsing procedure page => {procedura_url}")
-    all_doc_links = []
-    page = 1
-    max_retries = 3
-    
-    while True:
-        try:
-            # Add page parameter to URL
-            page_url = f"{procedura_url}?page={page}"
-            print(f"[DEBUG] Fetching page {page}: {page_url}")
-            
-            # Add timeout and retry logic
-            for attempt in range(max_retries):
-                try:
-                    resp = session.get(page_url, timeout=30)
-                    resp.raise_for_status()
-                    break
-                except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
-                    if attempt == max_retries - 1:
-                        print(f"[ERROR] Failed to fetch page {page} after {max_retries} attempts: {e}")
-                        return all_doc_links
-                    print(f"[WARN] Attempt {attempt + 1} failed, retrying...")
-                    time.sleep(DELAY_BETWEEN_REQUESTS)
+    resp = session.get(procedura_url, timeout=1000)
+    if resp.status_code != 200:
+        print(f"[WARN] Could not retrieve {procedura_url} (status={resp.status_code}).")
+        return []
 
-            soup = BeautifulSoup(resp.text, "html.parser")
-            doc_links = []
+    soup = BeautifulSoup(resp.text, "html.parser")
+    doc_links = []
 
-            # Check if we're getting a valid response
-            if "Non ci sono documenti da visualizzare" in resp.text:
-                print(f"[INFO] No more documents found after page {page-1}")
-                break
+    for a_tag in soup.find_all("a", href=True):
+        href = a_tag["href"]
+        if "/File/Documento/" in href:
+            doc_url = urllib.parse.urljoin(procedura_url, href)
+            doc_links.append(doc_url)
 
-            for a_tag in soup.find_all("a", href=True):
-                href = a_tag["href"]
-                if "/File/Documento/" in href:
-                    doc_url = urllib.parse.urljoin(procedura_url, href)
-                    doc_links.append(doc_url)
-
-            if not doc_links:  # If no documents found on this page, we've reached the end
-                print(f"[INFO] No documents found on page {page}, stopping pagination")
-                break
-                
-            all_doc_links.extend(doc_links)
-            print(f"[INFO] Found {len(doc_links)} doc links on page {page} (Total: {len(all_doc_links)})")
-            
-            # Add a small delay between pages to avoid overwhelming the server
-            time.sleep(DELAY_BETWEEN_REQUESTS)
-            page += 1
-
-        except Exception as e:
-            print(f"[ERROR] Error processing page {page}: {str(e)}")
-            break
-
-    print(f"[INFO] Found total of {len(all_doc_links)} doc links in this procedure.")
-    return all_doc_links
-
+    print(f"[INFO] Found {len(doc_links)} doc links on this procedure.")
+    return doc_links
 
 def run_scraper(keyword: str):
     # 1) Gather project detail URLs with session
