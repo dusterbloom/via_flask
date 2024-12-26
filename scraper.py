@@ -64,7 +64,8 @@ def get_projects(keyword: str) -> Tuple[List[str], ScraperSession]:
     current_page = 1
     
     while True:
-        search_url = f"{BASE_URL}{SEARCH_ENDPOINT}?Testo={urllib.parse.quote(keyword)}&t=o&p={current_page}"
+        # Modified search URL to include more results per page
+        search_url = f"{BASE_URL}{SEARCH_ENDPOINT}?Testo={urllib.parse.quote(keyword)}&t=o&p={current_page}&ps=100"
         logger.info(f"Searching page {current_page} with keyword='{keyword}'")
 
         try:
@@ -84,8 +85,9 @@ def get_projects(keyword: str) -> Tuple[List[str], ScraperSession]:
             all_project_links.extend(project_links)
             logger.info(f"Found {len(project_links)} project links on page {current_page}")
             
-            # Check for next page
-            if not any(f"p={current_page + 1}" in a["href"] for a in soup.find_all("a", href=True)):
+            # Check for next page more thoroughly
+            pagination = soup.find('ul', class_='pagination')
+            if not pagination or not any(f"p={current_page + 1}" in a.get('href', '') for a in pagination.find_all('a')):
                 break
                 
             current_page += 1

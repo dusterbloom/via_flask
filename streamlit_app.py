@@ -136,11 +136,17 @@ if submit_button:
                     project_urls = [f"{BASE_URL}/it-IT/Oggetti/Info/{project_id.strip()}"]
                 else:
                     # Get projects using cached function
+                    st.info("Fetching projects... This might take a while for large searches.")
                     project_urls = fetch_projects(keyword, max_projects)
+                    st.success(f"Found {len(project_urls)} projects")
                 
                 if not project_urls:
                     st.warning("No projects found.")
                     st.stop()
+                
+                if max_projects > 0:
+                    project_urls = project_urls[:max_projects]
+                    st.info(f"Processing first {max_projects} projects as requested")
                 
                 # Use the session from session state
                 scraper_session = st.session_state.scraper_session
