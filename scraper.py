@@ -153,7 +153,7 @@ def get_document_info(doc_url: str, session=None):
         print(f"[ERROR] Failed to get document info for {doc_url}: {e}")
         return None
     
-    
+
 def get_procedura_links(project_url: str, session=None):
     if session is None:
         session = requests.Session()
