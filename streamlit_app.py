@@ -2,6 +2,7 @@ import streamlit as st
 import os
 from scraper import get_projects, get_procedura_links, get_document_links
 import time
+<<<<<<< HEAD
 import tempfile
 import zipfile
 
@@ -56,6 +57,8 @@ def download_multiple_files(urls, session):
         except Exception as e:
             st.warning(f"Failed to download {doc['title']}: {str(e)}")
     return files_dict
+=======
+>>>>>>> parent of 4247293 (better handling of downloads)
 
 # Page config
 st.set_page_config(
@@ -71,6 +74,7 @@ This tool allows you to search and preview documents from the VIA Database.
 Enter a keyword below to start searching.
 """)
 
+<<<<<<< HEAD
 # Search controls
 col1, col2 = st.columns([3, 1])
 with col1:
@@ -81,6 +85,11 @@ with col2:
                                 value=10)
 
 search_button = st.button("Search")
+=======
+# Search input
+keyword = st.text_input("Enter a keyword:", key="search_keyword")
+search_button = st.button("Run Scraper")
+>>>>>>> parent of 4247293 (better handling of downloads)
 
 if search_button and keyword:
     keyword = keyword.strip()
@@ -205,4 +214,19 @@ if search_button and keyword:
             st.error(f"An error occurred: {str(e)}")
             st.error("Debug info:")
             import traceback
+<<<<<<< HEAD
             st.code(traceback.format_exc())
+=======
+            st.code(traceback.format_exc())
+
+# Show download folder contents
+if os.path.exists("downloads"):
+    with st.expander("View Downloaded Files"):
+        files = os.listdir("downloads")
+        if files:
+            st.write("Downloaded files:")
+            for file in files:
+                st.text(f"📄 {file}")
+        else:
+            st.write("No files downloaded yet.")
+>>>>>>> parent of 4247293 (better handling of downloads)
