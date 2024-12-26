@@ -204,29 +204,62 @@ def get_procedura_links(project_url: str, session=None):
     print(f"[INFO] Found {len(procedura_links)} procedure links on this project.")
     return procedura_links
 
-
 def get_document_links(procedura_url: str, session=None):
     if session is None:
         session = requests.Session()
         session.headers.update(HEADERS)
     
-    print(f"[INFO] Parsing procedure page => {procedura_url}")
-    resp = session.get(procedura_url, timeout=1000)
-    if resp.status_code != 200:
-        print(f"[WARN] Could not retrieve {procedura_url} (status={resp.status_code}).")
-        return []
+    all_doc_links = []
+    current_page = 1
+    
+    while True:
+        # Construct URL with pagination
+        page_url = procedura_url
+        if current_page > 1:
+            page_url = f"{procedura_url}?pagina={current_page}"
+            
+        print(f"[INFO] Parsing procedure page {current_page} => {page_url}")
+        
+        try:
+            resp = session.get(page_url, timeout=1000)
+            resp.raise_for_status()
 
-    soup = BeautifulSoup(resp.text, "html.parser")
-    doc_links = []
+            soup = BeautifulSoup(resp.text, "html.parser")
+            doc_links = []
 
-    for a_tag in soup.find_all("a", href=True):
-        href = a_tag["href"]
-        if "/File/Documento/" in href:
-            doc_url = urllib.parse.urljoin(procedura_url, href)
-            doc_links.append(doc_url)
+            # Find document links on current page
+            for a_tag in soup.find_all("a", href=True):
+                href = a_tag["href"]
+                if "/File/Documento/" in href:
+                    doc_url = urllib.parse.urljoin(procedura_url, href)
+                    doc_links.append(doc_url)
 
-    print(f"[INFO] Found {len(doc_links)} doc links on this procedure.")
-    return doc_links
+            if not doc_links:  # No documents found on this page
+                break
+                
+            all_doc_links.extend(doc_links)
+            print(f"[INFO] Found {len(doc_links)} doc links on page {current_page}")
+            
+            # Check if there's a next page by looking for pagination links
+            next_page_exists = False
+            pagination_links = soup.find_all("a", href=True)
+            for link in pagination_links:
+                if f"pagina={current_page + 1}" in link["href"]:
+                    next_page_exists = True
+                    break
+            
+            if not next_page_exists:
+                break
+                
+            current_page += 1
+            time.sleep(DELAY_BETWEEN_REQUESTS)  # Be nice to the server
+
+        except Exception as e:
+            print(f"[ERROR] Failed to get documents on page {current_page}: {e}")
+            break
+
+    print(f"[INFO] Total documents found across {current_page} pages: {len(all_doc_links)}")
+    return all_doc_links
 
 def run_scraper(keyword: str):
     # 1) Gather project detail URLs with session
