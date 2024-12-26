@@ -184,22 +184,35 @@ def get_document_links(procedura_url: str, session=None):
         session.headers.update(HEADERS)
     
     print(f"[INFO] Parsing procedure page => {procedura_url}")
-    resp = session.get(procedura_url, timeout=1000)
-    if resp.status_code != 200:
-        print(f"[WARN] Could not retrieve {procedura_url} (status={resp.status_code}).")
-        return []
+    all_doc_links = []
+    page = 1
+    
+    while True:
+        # Add page parameter to URL
+        page_url = f"{procedura_url}?page={page}"
+        resp = session.get(page_url, timeout=1000)
+        if resp.status_code != 200:
+            print(f"[WARN] Could not retrieve {page_url} (status={resp.status_code}).")
+            break
 
-    soup = BeautifulSoup(resp.text, "html.parser")
-    doc_links = []
+        soup = BeautifulSoup(resp.text, "html.parser")
+        doc_links = []
 
-    for a_tag in soup.find_all("a", href=True):
-        href = a_tag["href"]
-        if "/File/Documento/" in href:
-            doc_url = urllib.parse.urljoin(procedura_url, href)
-            doc_links.append(doc_url)
+        for a_tag in soup.find_all("a", href=True):
+            href = a_tag["href"]
+            if "/File/Documento/" in href:
+                doc_url = urllib.parse.urljoin(procedura_url, href)
+                doc_links.append(doc_url)
 
-    print(f"[INFO] Found {len(doc_links)} doc links on this procedure.")
-    return doc_links
+        if not doc_links:  # If no documents found on this page, we've reached the end
+            break
+            
+        all_doc_links.extend(doc_links)
+        print(f"[INFO] Found {len(doc_links)} doc links on page {page}")
+        page += 1
+
+    print(f"[INFO] Found total of {len(all_doc_links)} doc links in this procedure.")
+    return all_doc_links
 
 def run_scraper(keyword: str):
     # 1) Gather project detail URLs with session
