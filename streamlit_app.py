@@ -92,20 +92,45 @@ if search_button and keyword:
                 - Total documents available: {total_documents}
                 """)
 
-                # Display available documents in a table
+                                # Display available documents in a table
                 if available_documents:
                     st.write("### Available Documents")
                     st.write("Click on the links to open documents in a new tab:")
                     
                     for doc in available_documents:
-                        # Extract filename from the URL parameters
-                        from urllib.parse import unquote
-                        filename = unquote(doc['url'].split('fileName=')[-1]) if 'fileName=' in doc['url'] else doc['url'].split('/')[-1]
-                        st.markdown(f"""
-                        - [{filename}]({doc['url']})
-                          - Project: [{doc['project_url']}]({doc['project_url']})
-                          - Procedure: [{doc['procedure_url']}]({doc['procedure_url']})
-                        """)
+                        # Extract document ID from URL
+                        doc_id = doc['url'].split('/')[-1]
+                        # Construct metadata URL
+                        metadata_url = f"https://va.mite.gov.it/it-IT/Oggetti/MetadatoDocumento/{doc_id}"
+                        
+                        try:
+                            # Fetch metadata using the same session
+                            metadata_response = session.get(metadata_url)
+                            metadata_response.raise_for_status()
+                            
+                            # Here you'll need to parse the metadata page to extract the document title
+                            # You can use BeautifulSoup to parse the HTML and extract the document title
+                            # For now, we'll keep the filename as fallback
+                            from bs4 import BeautifulSoup
+                            soup = BeautifulSoup(metadata_response.text, 'html.parser')
+                            
+                            # Find the document title from the metadata table
+                            doc_title = soup.find('td', text='Documento').find_next('td').text.strip()
+                            
+                            st.markdown(f"""
+                            - [{doc_title}]({doc['url']})
+                              - Project: [{doc['project_url']}]({doc['project_url']})
+                              - Procedure: [{doc['procedure_url']}]({doc['procedure_url']})
+                            """)
+                        except Exception as e:
+                            # Fallback to the URL filename if metadata fetch fails
+                            from urllib.parse import unquote
+                            filename = unquote(doc['url'].split('fileName=')[-1]) if 'fileName=' in doc['url'] else doc['url'].split('/')[-1]
+                            st.markdown(f"""
+                            - [{filename}]({doc['url']})
+                              - Project: [{doc['project_url']}]({doc['project_url']})
+                              - Procedure: [{doc['procedure_url']}]({doc['procedure_url']})
+                            """)
                         
         except Exception as e:
             st.error(f"An error occurred: {str(e)}")
