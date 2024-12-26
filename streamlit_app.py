@@ -19,6 +19,31 @@ def create_zip_of_files(files_dict, zip_path):
         for filename, file_data in files_dict.items():
             zipf.writestr(filename, file_data)
 
+def get_file_extension(doc):
+    """Get appropriate file extension based on document type or URL"""
+    # Try to get extension from URL first
+    url = doc['url'].lower()
+    for ext in ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.zip', '.rar', '.7z', '.txt', '.rtf']:
+        if ext in url:
+            return ext
+    
+    # Fallback to type-based extension
+    type_mapping = {
+        'PDF': '.pdf',
+        'WORD': '.doc',
+        'EXCEL': '.xls',
+        'DOCUMENTO': '.pdf',  # Default for generic documents
+        'ARCHIVIO': '.zip',   # Default for archives
+        'TESTO': '.txt'       # Default for text files
+    }
+    
+    doc_type = doc.get('type', '').upper()
+    for key, ext in type_mapping.items():
+        if key in doc_type:
+            return ext
+    
+    return '.pdf'  # Default fallback
+
 def download_multiple_files(urls, session):
     """Download multiple files and return them as a dictionary"""
     files_dict = {}
@@ -26,18 +51,19 @@ def download_multiple_files(urls, session):
         try:
             response = session.get(doc['url'], stream=True)
             response.raise_for_status()
-            filename = f"{doc['title']}.pdf" if doc['title'] else doc['url'].split('/')[-1]
+            
+            # Get appropriate extension
+            extension = get_file_extension(doc)
+            
+            # Create filename with proper extension
+            filename = f"{doc['title']}{extension}"
+            # Clean filename of invalid characters
+            filename = "".join(c for c in filename if c.isalnum() or c in (' ', '-', '_', '.'))
+            
             files_dict[filename] = response.content
         except Exception as e:
             st.warning(f"Failed to download {doc['title']}: {str(e)}")
     return files_dict
-
-# Page config
-st.set_page_config(
-    page_title="VIA Database Search",
-    page_icon="🔍",
-    layout="wide"
-)
 
 # Create downloads directory if it doesn't exist
 if not os.path.exists("downloads"):
@@ -106,31 +132,31 @@ if search_button and keyword:
                                 selected_docs = project_docs
                             
                             # Display documents
+                            # In the document display loop:
                             for doc in project_docs:
                                 col1, col2, col3, col4 = st.columns([3, 2, 1, 1])
                                 with col1:
-                                    st.markdown(f"**{doc['title']}**")
+                                    extension = get_file_extension(doc)
+                                    icon = {
+                                        '.pdf': '📄',
+                                        '.doc': '📝',
+                                        '.docx': '📝',
+                                        '.xls': '📊',
+                                        '.xlsx': '📊',
+                                        '.zip': '📦',
+                                        '.rar': '📦',
+                                        '.7z': '📦',
+                                        '.txt': '📃',
+                                        '.rtf': '📃'
+                                    }.get(extension, '📄')
+                                    
+                                    st.markdown(f"**{icon} {doc['title']}{extension}**")
                                 with col2:
                                     st.markdown(f"""
                                     📅 {doc['date']}  
                                     📁 {doc['type']}  
                                     💾 {doc['size']}
                                     """)
-                                with col3:
-                                    # Individual selection checkbox
-                                    if st.checkbox("Select", key=f"select_{doc['url']}", 
-                                                 value=doc in selected_docs):
-                                        if doc not in selected_docs:
-                                            selected_docs.append(doc)
-                                with col4:
-                                    # Individual download button
-                                    if st.button(f"Download", key=f"download_{doc['url']}"):
-                                        try:
-                                            download_file(doc['url'], session)
-                                            st.success("File downloaded!")
-                                        except Exception as e:
-                                            st.error(f"Download failed: {str(e)}")
-                                st.markdown("---")
 
                 # Download selected documents
                 if selected_docs:
