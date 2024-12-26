@@ -213,15 +213,22 @@ if submit_button:
                             project_documents[project_id].append(doc)
                         
                         # Display documents grouped by project
+                        # Display documents grouped by project
                         for project_id, docs in project_documents.items():
                             project_info = get_project_info(docs[0]['project_url'], st.session_state.scraper_session)
-
-                            with st.expander(f"Project {project_id} ({len(docs)} documents)", expanded=True):
+                            
+                            with st.expander(f"Project {project_info['folder_id']} ({len(docs)} documents)", expanded=True):
+                                st.markdown(f"""
+                                ### Project Information
+                                - **Folder ID:** {project_info['folder_id']}
+                                - **Project Code:** {project_info['project_code']}
+                                - **Number of Documents:** {len(docs)}
+                                """)
+                                
                                 for doc in docs:
-                                    doc_id = doc['url'].split('/')[-1]
-                                    metadata_url = f"https://va.mite.gov.it/it-IT/Oggetti/MetadatoDocumento/{doc_id}"
-                                    
                                     try:
+                                        doc_id = doc['url'].split('/')[-1]
+                                        metadata_url = f"{BASE_URL}/it-IT/Oggetti/MetadatoDocumento/{doc_id}"
                                         metadata_response = st.session_state.scraper_session.get(metadata_url)
                                         metadata_response.raise_for_status()
                                         
@@ -230,19 +237,17 @@ if submit_button:
                                         
                                         if doc_title_element and doc_title_element.find_next('td'):
                                             doc_title = doc_title_element.find_next('td').text.strip()
-                                        else:
-                                            raise ValueError("Document title not found in metadata")
-                                            
-                                        with st.expander(f"Project {project_info['folder_id']} ({len(docs)} documents)", expanded=True):
                                             st.markdown(f"""
-                                            ### Project Information
-                                            - **Folder ID:** {project_info['folder_id']}
-                                            - **Project Code:** {project_info['project_code'] if project_info else 'Unknown'}
-                                            - **Number of Documents:** {len(docs)}
-                                            - **Project URL:** [{project_info['folder_id']}]({docs[0]['project_url']})
+                                            - [{doc_title}]({doc['url']})
+                                            - Project: [{doc['project_url']}]({doc['project_url']})
+                                            - Procedure: [{doc['procedure_url']}]({doc['procedure_url']})
                                             ---
                                             """)
+                                        else:
+                                            raise ValueError("Document title not found")
+                                            
                                     except Exception as e:
+                                        # Fallback to simple display if metadata fetch fails
                                         filename = unquote(doc['url'].split('fileName=')[-1]) if 'fileName=' in doc['url'] else doc['url'].split('/')[-1]
                                         st.markdown(f"""
                                         - [{filename}]({doc['url']})
