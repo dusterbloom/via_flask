@@ -144,7 +144,8 @@ def build_search_url(keyword: str, search_type="o", page=1):
     params = {
         "Testo": keyword,
         "t": search_type,  # 'o' = progetti, 'd' = documenti
-        "p": page  # Add page parameter
+        "p": page,  # Add page parameter
+        "ps": 50  # Set page size to maximum
     }
     return f"{BASE_URL}{SEARCH_ENDPOINT}?{urllib.parse.urlencode(params)}"
 
@@ -171,7 +172,6 @@ def get_procedura_links(project_url: str, session=None):
     print(f"[INFO] Found {len(procedura_links)} procedure links on this project.")
     return procedura_links
 
-
 def get_document_links(procedura_url: str, session=None):
     if session is None:
         session = requests.Session()
@@ -186,46 +186,62 @@ def get_document_links(procedura_url: str, session=None):
     soup = BeautifulSoup(resp.text, "html.parser")
     documents = []
 
-    # Find all document links
-    for link in soup.find_all("a", href=True):
+    # Find all document containers
+    doc_containers = soup.find_all("div", class_="documento") or soup.find_all("tr", class_="documento")
+    
+    for container in doc_containers:
+        # Find the document link
+        link = container.find("a", href=True)
+        if not link:
+            continue
+            
         href = link["href"]
-        # Expand document types to include common formats
-        if any(ext in href.lower() for ext in [
-            '/file/documento/',  # Generic document path
-            '.pdf', 
-            '.doc', 
-            '.docx', 
-            '.xls', 
-            '.xlsx',
-            '.zip',
-            '.rar',
-            '.7z',
-            '.txt',
-            '.rtf'
+        if not any(ext in href.lower() for ext in [
+            '/file/documento/',
+            '.pdf', '.doc', '.docx', '.xls', '.xlsx',
+            '.zip', '.rar', '.7z', '.txt', '.rtf'
         ]):
-            doc_data = {
-                "url": urllib.parse.urljoin(BASE_URL, href),
-                "title": link.get_text(strip=True) or "Untitled Document",
-                "date": "N/A",
-                "type": "Document",
-                "size": "N/A",
-                "extension": href.split('.')[-1].lower() if '.' in href else 'unknown'
-            }
+            continue
+
+        # Get the document title - try multiple approaches
+        title = None
+        # Try to get title from specific title element
+        title_elem = container.find("div", class_="titolo") or container.find("td", class_="titolo")
+        if title_elem:
+            title = title_elem.get_text(strip=True)
+        
+        # If no specific title element, try the link text
+        if not title:
+            title = link.get_text(strip=True)
             
-            # Try to find metadata in parent elements
-            parent_div = link.find_parent("div", class_="documento")
-            if parent_div:
-                metadata_div = parent_div.find("div", class_="metadata")
-                if metadata_div:
-                    date_span = metadata_div.find("span", class_="data")
-                    type_span = metadata_div.find("span", class_="tipo")
-                    size_span = metadata_div.find("span", class_="dimensione")
-                    
-                    doc_data["date"] = date_span.get_text(strip=True) if date_span else "N/A"
-                    doc_data["type"] = type_span.get_text(strip=True) if type_span else "Document"
-                    doc_data["size"] = size_span.get_text(strip=True) if size_span else "N/A"
+        # If still no title, try parent text
+        if not title:
+            title = container.get_text(strip=True)
             
-            documents.append(doc_data)
+        # If still nothing, use a fallback
+        if not title:
+            title = "Scarica il documento"
+
+        doc_data = {
+            "url": urllib.parse.urljoin(BASE_URL, href),
+            "title": title,
+            "date": "N/A",
+            "type": "Document",
+            "size": "N/A"
+        }
+        
+        # Try to find metadata
+        metadata_div = container.find("div", class_="metadata")
+        if metadata_div:
+            date_span = metadata_div.find("span", class_="data")
+            type_span = metadata_div.find("span", class_="tipo")
+            size_span = metadata_div.find("span", class_="dimensione")
+            
+            doc_data["date"] = date_span.get_text(strip=True) if date_span else "N/A"
+            doc_data["type"] = type_span.get_text(strip=True) if type_span else "Document"
+            doc_data["size"] = size_span.get_text(strip=True) if size_span else "N/A"
+        
+        documents.append(doc_data)
 
     print(f"[INFO] Found {len(documents)} documents with metadata")
     return documents
