@@ -101,28 +101,45 @@ Enter a keyword below to start searching.
 """)
 
 # Search inputs
+# Search inputs
 with st.form("search_form"):
-    keyword = st.text_input("Enter a keyword:", key="search_keyword")
-    max_projects = st.number_input(
-        "Maximum number of projects to process (0 for all):", 
-        min_value=0, 
-        value=0, 
-        help="Set to 0 to process all found projects"
-    )
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        keyword = st.text_input("Enter a keyword:", key="search_keyword")
+    
+    with col2:
+        project_id = st.text_input(
+            "Project ID (optional):",
+            help="Enter a specific project ID to filter results"
+        )
+    
+    col3, col4 = st.columns([2, 1])
+    with col3:
+        max_projects = st.number_input(
+            "Maximum number of projects to process (0 for all):", 
+            min_value=0, 
+            value=0, 
+            help="Set to 0 to process all found projects"
+        )
+    
     submit_button = st.form_submit_button("Run Scraper")
 
-if submit_button and keyword:
-    keyword = keyword.strip()
-    if not keyword:
-        st.error("Please enter a valid keyword.")
+if submit_button:
+    if not keyword.strip() and not project_id.strip():
+        st.error("Please enter either a keyword or a project ID.")
     else:
         try:
             with st.spinner("Searching for projects..."):
-                # Get projects using cached function
-                project_urls = fetch_projects(keyword, max_projects)
+                if project_id:
+                    # If project ID is provided, create direct URL
+                    project_urls = [f"{BASE_URL}/it-IT/Oggetti/Info/{project_id.strip()}"]
+                else:
+                    # Get projects using cached function
+                    project_urls = fetch_projects(keyword, max_projects)
                 
                 if not project_urls:
-                    st.warning("No projects found for this keyword.")
+                    st.warning("No projects found.")
                     st.stop()
                 
                 # Use the session from session state
