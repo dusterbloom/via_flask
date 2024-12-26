@@ -10,6 +10,17 @@ SEARCH_ENDPOINT = "/it-IT/Ricerca/ViaLibera"
 DOWNLOAD_FOLDER = "downloads"
 DELAY_BETWEEN_REQUESTS = 2.0
 
+
+HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.5',
+    'Connection': 'keep-alive',
+    'Upgrade-Insecure-Requests': '1',
+}
+
+
+
 if not os.path.exists(DOWNLOAD_FOLDER):
     os.makedirs(DOWNLOAD_FOLDER)
 
@@ -68,28 +79,48 @@ def download_file(doc_url: str, session=None):
 
 
 def get_projects(keyword: str):
+    # Create a session object
+    session = requests.Session()
+    session.headers.update(HEADERS)
+    
     search_url = build_search_url(keyword, search_type="o")
     print(f"[INFO] Searching for projects with keyword='{keyword}' => {search_url}")
 
-    resp = requests.get(search_url, timeout=10)
-    resp.raise_for_status()
+    try:
+        # First, get the main page to obtain any necessary cookies
+        session.get(BASE_URL)
+        
+        # Now perform the search
+        resp = session.get(search_url, timeout=10)
+        resp.raise_for_status()
+        
+        soup = BeautifulSoup(resp.text, "html.parser")
+        
+        # Debug output
+        print(f"[DEBUG] Response status: {resp.status_code}")
+        print(f"[DEBUG] Response content length: {len(resp.text)}")
+        
+        project_links = []
+        for a_tag in soup.find_all("a", href=True):
+            href = a_tag["href"]
+            if "/it-IT/Oggetti/Info/" in href:
+                full_url = urllib.parse.urljoin(BASE_URL, href)
+                project_links.append(full_url)
 
-    soup = BeautifulSoup(resp.text, "html.parser")
+        print(f"[INFO] Found {len(project_links)} project detail links.")
+        return project_links, session  # Return the session for reuse
 
-    project_links = []
-    for a_tag in soup.find_all("a", href=True):
-        href = a_tag["href"]
-        if "/it-IT/Oggetti/Info/" in href:
-            full_url = urllib.parse.urljoin(BASE_URL, href)
-            project_links.append(full_url)
+    except Exception as e:
+        print(f"[ERROR] Failed to get projects: {e}")
+        return [], session
 
-    print(f"[INFO] Found {len(project_links)} project detail links.")
-    return project_links
-
-
-def get_procedura_links(project_url: str):
+def get_procedura_links(project_url: str, session=None):
+    if session is None:
+        session = requests.Session()
+        session.headers.update(HEADERS)
+    
     print(f"[INFO] Parsing project page => {project_url}")
-    resp = requests.get(project_url, timeout=10)
+    resp = session.get(project_url, timeout=10)
     if resp.status_code != 200:
         print(f"[WARN] Could not retrieve {project_url} (status={resp.status_code}).")
         return []
@@ -107,9 +138,13 @@ def get_procedura_links(project_url: str):
     return procedura_links
 
 
-def get_document_links(procedura_url: str):
+def get_document_links(procedura_url: str, session=None):
+    if session is None:
+        session = requests.Session()
+        session.headers.update(HEADERS)
+    
     print(f"[INFO] Parsing procedure page => {procedura_url}")
-    resp = requests.get(procedura_url, timeout=10)
+    resp = session.get(procedura_url, timeout=10)
     if resp.status_code != 200:
         print(f"[WARN] Could not retrieve {procedura_url} (status={resp.status_code}).")
         return []
@@ -126,23 +161,27 @@ def get_document_links(procedura_url: str):
     print(f"[INFO] Found {len(doc_links)} doc links on this procedure.")
     return doc_links
 
-
 def run_scraper(keyword: str):
-    # 1) Gather project detail URLs
-    project_urls = get_projects(keyword)
+    # 1) Gather project detail URLs with session
+    project_urls, session = get_projects(keyword)
 
     for project_url in project_urls:
-        # 2) For each project, gather procedure pages
-        procedure_urls = get_procedura_links(project_url)
+        try:
+            # 2) For each project, gather procedure pages
+            procedure_urls = get_procedura_links(project_url, session)
 
-        for proc_url in procedure_urls:
-            # 3) Gather the final doc links
-            doc_urls = get_document_links(proc_url)
+            for proc_url in procedure_urls:
+                # 3) Gather the final doc links
+                doc_urls = get_document_links(proc_url, session)
 
-            # 4) Download them
-            for durl in doc_urls:
-                download_file(durl)
-                time.sleep(DELAY_BETWEEN_REQUESTS)
+                # 4) Download them
+                for durl in doc_urls:
+                    download_file(durl, session)
+                    time.sleep(DELAY_BETWEEN_REQUESTS)
 
-        # Wait a bit between projects
-        time.sleep(DELAY_BETWEEN_REQUESTS)
+            # Wait a bit between projects
+            time.sleep(DELAY_BETWEEN_REQUESTS)
+            
+        except Exception as e:
+            print(f"[ERROR] Failed processing project {project_url}: {e}")
+            continue
