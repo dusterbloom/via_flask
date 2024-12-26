@@ -20,6 +20,10 @@ HEADERS = {
 }
 
 
+DELAY_BETWEEN_REQUESTS = 2.0  # seconds
+MAX_RETRIES = 3
+REQUEST_TIMEOUT = 30  # seconds
+
 
 if not os.path.exists(DOWNLOAD_FOLDER):
     os.makedirs(DOWNLOAD_FOLDER)
