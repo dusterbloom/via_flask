@@ -54,29 +54,40 @@ if search_button and keyword:
                     project_urls = project_urls[:max_projects]
                 st.info(f"Found {len(project_urls)} projects to process")
                 
-                # Create a progress bar
-                progress_bar = st.progress(0)
-                status_text = st.empty()
+                # Create progress indicators
+                progress_container = st.container()
+                with progress_container:
+                    progress_bar = st.progress(0)
+                    status_text = st.empty()
+                    current_procedure = st.empty()
+                    current_page = st.empty()
+                    doc_counter = st.empty()
 
                 # Initialize counters and document storage
                 total_procedures = 0
                 total_documents = 0
-                available_documents = []  # New list to store document info
+                available_documents = []
                 
                 # Process each project
                 for i, project_url in enumerate(project_urls):
                     status_text.text(f"Processing project {i+1}/{len(project_urls)}")
+                    progress_bar.progress((i + 1) / len(project_urls))
                     
                     # 2) Get procedure pages - pass the session
                     procedure_urls = get_procedura_links(project_url, session)
                     total_procedures += len(procedure_urls)
 
-                    for proc_url in procedure_urls:
+                    for proc_idx, proc_url in enumerate(procedure_urls):
+                        current_procedure.text(f"Processing procedure {proc_idx + 1}/{len(procedure_urls)}")
+                        
                         # 3) Get document links - pass the session
                         doc_urls = get_document_links(proc_url, session)
                         total_documents += len(doc_urls)
                         
-                        # Store document URLs instead of downloading
+                        # Update document counter
+                        doc_counter.text(f"Documents found so far: {total_documents}")
+                        
+                        # Store document URLs
                         for doc_url in doc_urls:
                             available_documents.append({
                                 'url': doc_url,
