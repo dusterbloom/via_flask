@@ -23,6 +23,8 @@ if 'current_page' not in st.session_state:
     st.session_state['current_page'] = 1
 if 'available_documents' not in st.session_state:
     st.session_state['available_documents'] = []
+if 'scraper_session' not in st.session_state:
+    st.session_state['scraper_session'] = ScraperSession()
 
 # Cached functions for expensive operations
 @st.cache_data(ttl=3600)  # Cache for 1 hour
@@ -154,8 +156,8 @@ if submit_button and keyword:
                     st.warning("No projects found for this keyword.")
                     st.stop()
                 
-                # Create a new scraper session for this run
-                scraper_session = ScraperSession()
+                # Use the session from session state
+                scraper_session = st.session_state.scraper_session
                 
                 st.success(f"Found {len(project_urls)} projects")
                 
@@ -206,14 +208,14 @@ if submit_button and keyword:
                     st.write("Click on the links to open documents in a new tab:")
                     
                     # Display documents for current page
-                    display_document_page(available_documents, current_page, docs_per_page, session)
+                    display_document_page(available_documents, current_page, docs_per_page, scraper_session)
                     
                     # Download section
                     st.markdown("---")
                     if st.button("Download All Documents"):
                         try:
                             with st.spinner("Creating zip file of all documents..."):
-                                zip_path = create_zip_of_documents(available_documents, session)
+                                zip_path = create_zip_of_documents(available_documents, scraper_session)
                             
                             with open(zip_path, "rb") as fp:
                                 btn = st.download_button(
