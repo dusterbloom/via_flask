@@ -77,42 +77,69 @@ def download_file(doc_url: str, session=None):
     except Exception as e:
         print(f"[ERROR] Download failed for {doc_url}: {e}")
 
+def build_search_url(keyword: str, search_type="o", page=1):
+    params = {
+        "Testo": keyword,
+        "t": search_type,  # 'o' = progetti, 'd' = documenti
+        "p": page  # Add page parameter
+    }
+    return f"{BASE_URL}{SEARCH_ENDPOINT}?{urllib.parse.urlencode(params)}"
+
 def get_projects(keyword: str):
-    # Create a session object
     session = requests.Session()
     session.headers.update(HEADERS)
     
-    search_url = build_search_url(keyword, search_type="o")
-    print(f"[INFO] Searching for projects with keyword='{keyword}' => {search_url}")
+    all_project_links = []
+    current_page = 1
+    
+    while True:
+        search_url = build_search_url(keyword, search_type="o", page=current_page)
+        print(f"[INFO] Searching page {current_page} with keyword='{keyword}' => {search_url}")
 
-    try:
-        # First, get the main page to obtain any necessary cookies
-        session.get(BASE_URL)
-        
-        # Now perform the search
-        resp = session.get(search_url, timeout=10)
-        resp.raise_for_status()
-        
-        soup = BeautifulSoup(resp.text, "html.parser")
-        
-        # Debug output
-        print(f"[DEBUG] Response status: {resp.status_code}")
-        print(f"[DEBUG] Response content length: {len(resp.text)}")
-        
-        project_links = []
-        for a_tag in soup.find_all("a", href=True):
-            href = a_tag["href"]
-            if "/it-IT/Oggetti/Info/" in href:
-                full_url = urllib.parse.urljoin(BASE_URL, href)
-                project_links.append(full_url)
+        try:
+            # First page only: get the main page to obtain any necessary cookies
+            if current_page == 1:
+                session.get(BASE_URL)
+            
+            # Get the search results page
+            resp = session.get(search_url, timeout=10)
+            resp.raise_for_status()
+            
+            soup = BeautifulSoup(resp.text, "html.parser")
+            
+            # Find project links on current page
+            project_links = []
+            for a_tag in soup.find_all("a", href=True):
+                href = a_tag["href"]
+                if "/it-IT/Oggetti/Info/" in href:
+                    full_url = urllib.parse.urljoin(BASE_URL, href)
+                    project_links.append(full_url)
 
-        print(f"[INFO] Found {len(project_links)} project detail links.")
-        return project_links, session  # Return both the links and session
+            if not project_links:  # No more results found
+                break
+                
+            all_project_links.extend(project_links)
+            print(f"[INFO] Found {len(project_links)} project links on page {current_page}")
+            
+            # Check if there's a next page by looking for pagination links
+            next_page_exists = False
+            for a_tag in soup.find_all("a", href=True):
+                if f"p={current_page + 1}" in a_tag["href"]:
+                    next_page_exists = True
+                    break
+            
+            if not next_page_exists:
+                break
+                
+            current_page += 1
+            time.sleep(DELAY_BETWEEN_REQUESTS)  # Be nice to the server between page requests
 
-    except Exception as e:
-        print(f"[ERROR] Failed to get projects: {e}")
-        return [], session
+        except Exception as e:
+            print(f"[ERROR] Failed to get projects on page {current_page}: {e}")
+            break
 
+    print(f"[INFO] Total projects found across {current_page} pages: {len(all_project_links)}")
+    return all_project_links, session
 
 def get_document_info(doc_url: str, session=None):
     if session is None:
