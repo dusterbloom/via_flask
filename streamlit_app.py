@@ -93,11 +93,23 @@ if search_button and keyword:
                 """)
 
                                 # Display available documents in a table
+                # Add this after the document processing loop (around line 95)
                 if available_documents:
-                    st.write("### Available Documents")
+                    # Pagination controls
+                    docs_per_page = 10
+                    total_pages = len(available_documents) // docs_per_page + (1 if len(available_documents) % docs_per_page > 0 else 0)
+                    
+                    col1, col2, col3 = st.columns([1, 2, 1])
+                    with col2:
+                        current_page = st.selectbox("Page", options=range(1, total_pages + 1), format_func=lambda x: f"Page {x} of {total_pages}")
+                    
+                    start_idx = (current_page - 1) * docs_per_page
+                    end_idx = min(start_idx + docs_per_page, len(available_documents))
+                    
                     st.write("Click on the links to open documents in a new tab:")
                     
-                    for doc in available_documents:
+                    # Display only the documents for the current page
+                    for doc in available_documents[start_idx:end_idx]:
                         # Extract document ID from URL
                         doc_id = doc['url'].split('/')[-1]
                         # Construct metadata URL
@@ -108,19 +120,13 @@ if search_button and keyword:
                             metadata_response = session.get(metadata_url)
                             metadata_response.raise_for_status()
                             
-                            # Here you'll need to parse the metadata page to extract the document title
-                            # You can use BeautifulSoup to parse the HTML and extract the document title
-                            # For now, we'll keep the filename as fallback
-                            from bs4 import BeautifulSoup
                             soup = BeautifulSoup(metadata_response.text, 'html.parser')
-                            
-                            # Find the document title from the metadata table
                             doc_title = soup.find('td', text='Documento').find_next('td').text.strip()
                             
                             st.markdown(f"""
                             - [{doc_title}]({doc['url']})
-                              - Project: [{doc['project_url']}]({doc['project_url']})
-                              - Procedure: [{doc['procedure_url']}]({doc['procedure_url']})
+                            - Project: [{doc['project_url']}]({doc['project_url']})
+                            - Procedure: [{doc['procedure_url']}]({doc['procedure_url']})
                             """)
                         except Exception as e:
                             # Fallback to the URL filename if metadata fetch fails
@@ -128,9 +134,22 @@ if search_button and keyword:
                             filename = unquote(doc['url'].split('fileName=')[-1]) if 'fileName=' in doc['url'] else doc['url'].split('/')[-1]
                             st.markdown(f"""
                             - [{filename}]({doc['url']})
-                              - Project: [{doc['project_url']}]({doc['project_url']})
-                              - Procedure: [{doc['procedure_url']}]({doc['procedure_url']})
+                            - Project: [{doc['project_url']}]({doc['project_url']})
+                            - Procedure: [{doc['procedure_url']}]({doc['procedure_url']})
                             """)
+                    
+                    # Add page navigation buttons
+                    col1, col2, col3 = st.columns([1, 2, 1])
+                    with col1:
+                        if current_page > 1:
+                            if st.button("← Previous"):
+                                st.session_state['current_page'] = current_page - 1
+                                st.rerun()
+                    with col3:
+                        if current_page < total_pages:
+                            if st.button("Next →"):
+                                st.session_state['current_page'] = current_page + 1
+                                st.rerun()
                         
         except Exception as e:
             st.error(f"An error occurred: {str(e)}")
