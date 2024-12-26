@@ -92,14 +92,16 @@ if search_button and keyword:
                 - Total documents available: {total_documents}
                 """)
 
-                # Display available documents in a table
+                 # Display available documents in a table
                 if available_documents:
                     st.write("### Available Documents")
                     st.write("Click on the links to open documents in a new tab:")
                     
                     for doc in available_documents:
+                        # Extract filename from the URL
+                        filename = doc['url'].split('/')[-1]
                         st.markdown(f"""
-                        - [Document]({doc['url']})
+                        - [{filename}]({doc['url']})
                           - Project: [{doc['project_url']}]({doc['project_url']})
                           - Procedure: [{doc['procedure_url']}]({doc['procedure_url']})
                         """)
