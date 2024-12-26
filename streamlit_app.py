@@ -113,12 +113,12 @@ with st.form("search_form"):
     with col2:
         id_type = st.selectbox(
             "ID Type:",
-            ["Project ID", "Procedure Code"],
-            help="Select whether to search by Project ID or Procedure Code"
+            ["Folder ID", "Project Code"],
+            help="Folder ID is the URL number, Project Code is the internal code"
         )
-        project_id = st.text_input(
+        search_id = st.text_input(
             f"Enter {id_type}:",
-            help="Enter the ID to search for specific project"
+            help="Folder ID example: 11230, Project Code example: 12960"
         )
     
     col3, col4 = st.columns([2, 1])
@@ -126,32 +126,26 @@ with st.form("search_form"):
         max_projects = st.number_input(
             "Maximum number of projects to process (0 for all):", 
             min_value=0, 
-            value=0, 
-            help="Set to 0 to process all found projects"
+            value=0
         )
     
     submit_button = st.form_submit_button("Run Scraper")
 
 if submit_button:
-    if not keyword.strip() and not project_id.strip():
+    if not keyword.strip() and not search_id.strip():
         st.error("Please enter either a keyword or an ID.")
     else:
         try:
             with st.spinner("Searching for projects..."):
-                if project_id:
-                    if id_type == "Project ID":
-                        # If project ID is provided, create direct URL
-                        project_urls = [f"{BASE_URL}/it-IT/Oggetti/Info/{project_id.strip()}"]
-                    else:
-                        # If procedure code is provided, search for it
-                        st.info(f"Searching for procedure code: {project_id}")
+                if search_id:
+                    if id_type == "Folder ID":
+                        project_urls = [f"{BASE_URL}/it-IT/Oggetti/Info/{search_id.strip()}"]
+                    else:  # Project Code
                         all_projects = fetch_projects(keyword if keyword else "", 0)
                         project_urls = []
-                        
-                        # Check each project for matching procedure code
                         for proj_url in all_projects:
                             info = get_project_info(proj_url, st.session_state.scraper_session)
-                            if info and info['procedure_code'] == project_id.strip():
+                            if info and info['project_code'] == search_id.strip():
                                 project_urls.append(proj_url)
                                 break
                 else:
@@ -239,14 +233,15 @@ if submit_button:
                                         else:
                                             raise ValueError("Document title not found in metadata")
                                             
-                                        st.markdown(f"""
-                                        ### Project Information
-                                        - **Project ID:** {project_id}
-                                        - **Procedure Code:** {project_info['procedure_code'] if project_info else 'Unknown'}
-                                        - **Number of Documents:** {len(docs)}
-                                        - **Project URL:** [{project_id}]({docs[0]['project_url']})
-                                        ---
-                                        """)
+                                        with st.expander(f"Project {project_info['folder_id']} ({len(docs)} documents)", expanded=True):
+                                            st.markdown(f"""
+                                            ### Project Information
+                                            - **Folder ID:** {project_info['folder_id']}
+                                            - **Project Code:** {project_info['project_code'] if project_info else 'Unknown'}
+                                            - **Number of Documents:** {len(docs)}
+                                            - **Project URL:** [{project_info['folder_id']}]({docs[0]['project_url']})
+                                            ---
+                                            """)
                                     except Exception as e:
                                         filename = unquote(doc['url'].split('fileName=')[-1]) if 'fileName=' in doc['url'] else doc['url'].split('/')[-1]
                                         st.markdown(f"""

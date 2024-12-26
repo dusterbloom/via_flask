@@ -58,12 +58,16 @@ def get_filename_from_response(response: requests.Response) -> str:
     return filename
 
 def get_project_info(project_url: str, session: ScraperSession) -> Dict:
-    """Get project information including procedure code."""
+    """Get project information including both project code and folder code."""
     try:
         resp = session.get(project_url, timeout=10)
         resp.raise_for_status()
         
         soup = BeautifulSoup(resp.text, "html.parser")
+        
+        # Initialize values
+        project_code = None
+        folder_id = project_url.split('/')[-1]  # This is the folder ID from URL
         
         # Find the procedure table
         procedure_table = soup.find('table', class_='table')
@@ -73,16 +77,11 @@ def get_project_info(project_url: str, session: ScraperSession) -> Dict:
                 cells = row.find_all('td')
                 if len(cells) >= 2:
                     if 'Codice procedura' in cells[0].text:
-                        procedure_code = cells[1].text.strip()
-                        return {
-                            'project_id': project_url.split('/')[-1],
-                            'procedure_code': procedure_code,
-                            'url': project_url
-                        }
+                        project_code = cells[1].text.strip()
         
         return {
-            'project_id': project_url.split('/')[-1],
-            'procedure_code': None,
+            'project_code': project_code,  # The actual project code (e.g., 12960)
+            'folder_id': folder_id,        # The folder ID from URL (e.g., 11230)
             'url': project_url
         }
         
