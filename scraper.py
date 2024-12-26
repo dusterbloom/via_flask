@@ -113,6 +113,47 @@ def get_projects(keyword: str):
         print(f"[ERROR] Failed to get projects: {e}")
         return [], session
 
+
+def get_document_info(doc_url: str, session=None):
+    if session is None:
+        session = requests.Session()
+    
+    try:
+        # Just get the headers to check file info
+        r = session.head(doc_url, timeout=10)
+        r.raise_for_status()
+        
+        content_disposition = r.headers.get("Content-Disposition", "")
+        filename = None
+        
+        if content_disposition:
+            match = re.search(r'filename\*?=(["\']?)(.*?)\1(?:;|$)', content_disposition)
+            if match:
+                filename_candidate = match.group(2).strip()
+                filename_candidate = filename_candidate.strip('"').split('/')[-1]
+                if filename_candidate:
+                    filename = filename_candidate
+        
+        if not filename:
+            filename = os.path.basename(urllib.parse.urlsplit(doc_url).path)
+            if not filename:
+                filename = f"doc_{int(time.time())}.pdf"
+        
+        if not os.path.splitext(filename)[1]:
+            filename += ".pdf"
+            
+        return {
+            'url': doc_url,
+            'filename': filename,
+            'size': r.headers.get('Content-Length', 'Unknown'),
+            'type': r.headers.get('Content-Type', 'Unknown')
+        }
+        
+    except Exception as e:
+        print(f"[ERROR] Failed to get document info for {doc_url}: {e}")
+        return None
+    
+    
 def get_procedura_links(project_url: str, session=None):
     if session is None:
         session = requests.Session()

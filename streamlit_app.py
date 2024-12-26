@@ -40,6 +40,10 @@ st.info(f"Downloads folder: {os.path.abspath('downloads')}")
 
 # Search input
 keyword = st.text_input("Enter a keyword:", key="search_keyword")
+max_projects = st.number_input("Maximum number of projects to process (0 for all):", 
+                             min_value=0, 
+                             value=0, 
+                             help="Set to 0 to process all found projects")
 search_button = st.button("Run Scraper")
 
 if search_button and keyword:
@@ -51,8 +55,11 @@ if search_button and keyword:
             with st.spinner("Searching for projects..."):
                 # 1) Get project URLs and session
                 project_urls, session = get_projects(keyword)  # Make sure to unpack both values
-                st.info(f"Found {len(project_urls)} projects")
-
+                  # Apply the project limit if specified
+                if max_projects > 0:
+                    project_urls = project_urls[:max_projects]
+                st.info(f"Found {len(project_urls)} projects to process")
+                
                 # Create a progress bar
                 progress_bar = st.progress(0)
                 status_text = st.empty()
