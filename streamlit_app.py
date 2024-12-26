@@ -168,15 +168,18 @@ if submit_button and keyword:
                     doc_container = st.container()
                     
                     with doc_container:
-                        # Group documents by project for better organization
-                        current_project = None
+                        # Group documents by project
+                        project_documents = {}
                         for doc in available_documents:
                             project_id = doc['project_url'].split('/')[-1]
-                            
-                            # Create a new expander for each project
-                            if project_id != current_project:
-                                current_project = project_id
-                                with st.expander(f"Project {project_id}", expanded=False):
+                            if project_id not in project_documents:
+                                project_documents[project_id] = []
+                            project_documents[project_id].append(doc)
+                        
+                        # Display documents grouped by project
+                        for project_id, docs in project_documents.items():
+                            with st.expander(f"Project {project_id} ({len(docs)} documents)", expanded=False):
+                                for doc in docs:
                                     doc_id = doc['url'].split('/')[-1]
                                     metadata_url = f"https://va.mite.gov.it/it-IT/Oggetti/MetadatoDocumento/{doc_id}"
                                     
@@ -196,6 +199,7 @@ if submit_button and keyword:
                                         - [{doc_title}]({doc['url']})
                                         - Project: [{doc['project_url']}]({doc['project_url']})
                                         - Procedure: [{doc['procedure_url']}]({doc['procedure_url']})
+                                        ---
                                         """)
                                     except Exception as e:
                                         filename = unquote(doc['url'].split('fileName=')[-1]) if 'fileName=' in doc['url'] else doc['url'].split('/')[-1]
@@ -203,6 +207,7 @@ if submit_button and keyword:
                                         - [{filename}]({doc['url']})
                                         - Project: [{doc['project_url']}]({doc['project_url']})
                                         - Procedure: [{doc['procedure_url']}]({doc['procedure_url']})
+                                        ---
                                         """)
                     
                     # Download section
