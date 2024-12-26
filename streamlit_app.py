@@ -90,6 +90,7 @@ if search_button and keyword:
                 - Projects processed: {len(project_urls)}
                 - Total procedures found: {total_procedures}
                 - Total documents available: {total_documents}
+                - Documents in list: {len(available_documents)}  # Debug count
                 """)
 
                                 # Display available documents in a table
