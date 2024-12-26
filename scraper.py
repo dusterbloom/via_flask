@@ -90,7 +90,7 @@ def get_projects(keyword: str):
         session.get(BASE_URL)
         
         # Now perform the search
-        resp = session.get(search_url, timeout=10)
+        resp = session.get(search_url, timeout=1000)
         resp.raise_for_status()
         
         soup = BeautifulSoup(resp.text, "html.parser")
@@ -120,7 +120,7 @@ def get_document_info(doc_url: str, session=None):
     
     try:
         # Just get the headers to check file info
-        r = session.head(doc_url, timeout=10)
+        r = session.head(doc_url, timeout=1000)
         r.raise_for_status()
         
         content_disposition = r.headers.get("Content-Disposition", "")
@@ -160,7 +160,7 @@ def get_procedura_links(project_url: str, session=None):
         session.headers.update(HEADERS)
     
     print(f"[INFO] Parsing project page => {project_url}")
-    resp = session.get(project_url, timeout=10)
+    resp = session.get(project_url, timeout=1000)
     if resp.status_code != 200:
         print(f"[WARN] Could not retrieve {project_url} (status={resp.status_code}).")
         return []
@@ -184,7 +184,7 @@ def get_document_links(procedura_url: str, session=None):
         session.headers.update(HEADERS)
     
     print(f"[INFO] Parsing procedure page => {procedura_url}")
-    resp = session.get(procedura_url, timeout=10)
+    resp = session.get(procedura_url, timeout=1000)
     if resp.status_code != 200:
         print(f"[WARN] Could not retrieve {procedura_url} (status={resp.status_code}).")
         return []
