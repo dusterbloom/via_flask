@@ -33,11 +33,6 @@ This tool allows you to search and download documents from the VIA Database.
 Enter a keyword below to start searching.
 """)
 
-# Show download folder path
-st.info(f"Downloads folder: {os.path.abspath('downloads')}")
-
-
-
 # Search input
 keyword = st.text_input("Enter a keyword:", key="search_keyword")
 max_projects = st.number_input("Maximum number of projects to process (0 for all):", 
