@@ -80,38 +80,7 @@ def create_zip_of_documents(documents, _session):
     
     return zip_path
 
-def display_document_page(documents, current_page, docs_per_page, _session):
-    start_idx = (current_page - 1) * docs_per_page
-    end_idx = min(start_idx + docs_per_page, len(documents))
-    
-    for doc in documents[start_idx:end_idx]:
-        doc_id = doc['url'].split('/')[-1]
-        metadata_url = f"https://va.mite.gov.it/it-IT/Oggetti/MetadatoDocumento/{doc_id}"
-        
-        try:
-            metadata_response = _session.get(metadata_url)
-            metadata_response.raise_for_status()
-            
-            soup = BeautifulSoup(metadata_response.text, 'html.parser')
-            doc_title_element = soup.find('td', text='Documento')
-            
-            if doc_title_element and doc_title_element.find_next('td'):
-                doc_title = doc_title_element.find_next('td').text.strip()
-            else:
-                raise ValueError("Document title not found in metadata")
-                
-            st.markdown(f"""
-            - [{doc_title}]({doc['url']})
-            - Project: [{doc['project_url']}]({doc['project_url']})
-            - Procedure: [{doc['procedure_url']}]({doc['procedure_url']})
-            """)
-        except Exception as e:
-            filename = unquote(doc['url'].split('fileName=')[-1]) if 'fileName=' in doc['url'] else doc['url'].split('/')[-1]
-            st.markdown(f"""
-            - [{filename}]({doc['url']})
-            - Project: [{doc['project_url']}]({doc['project_url']})
-            - Procedure: [{doc['procedure_url']}]({doc['procedure_url']})
-            """)
+
 
 # Page config
 st.set_page_config(
@@ -193,29 +162,55 @@ if submit_button and keyword:
 
                 # Display documents with pagination
                 if available_documents:
-                    docs_per_page = 10
-                    total_pages = len(available_documents) // docs_per_page + (1 if len(available_documents) % docs_per_page > 0 else 0)
-                    
-                    col1, col2, col3 = st.columns([1, 2, 1])
-                    with col2:
-                        current_page = st.selectbox(
-                            "Page", 
-                            options=range(1, total_pages + 1), 
-                            format_func=lambda x: f"Page {x} of {total_pages}",
-                            key='current_page'
-                        )
-                    
                     st.write("Click on the links to open documents in a new tab:")
                     
-                    # Display documents for current page
-                    display_document_page(available_documents, current_page, docs_per_page, scraper_session)
+                    # Create a container for all documents
+                    doc_container = st.container()
+                    
+                    with doc_container:
+                        # Group documents by project for better organization
+                        current_project = None
+                        for doc in available_documents:
+                            project_id = doc['project_url'].split('/')[-1]
+                            
+                            # Create a new expander for each project
+                            if project_id != current_project:
+                                current_project = project_id
+                                with st.expander(f"Project {project_id}", expanded=False):
+                                    doc_id = doc['url'].split('/')[-1]
+                                    metadata_url = f"https://va.mite.gov.it/it-IT/Oggetti/MetadatoDocumento/{doc_id}"
+                                    
+                                    try:
+                                        metadata_response = st.session_state.scraper_session.get(metadata_url)
+                                        metadata_response.raise_for_status()
+                                        
+                                        soup = BeautifulSoup(metadata_response.text, 'html.parser')
+                                        doc_title_element = soup.find('td', text='Documento')
+                                        
+                                        if doc_title_element and doc_title_element.find_next('td'):
+                                            doc_title = doc_title_element.find_next('td').text.strip()
+                                        else:
+                                            raise ValueError("Document title not found in metadata")
+                                            
+                                        st.markdown(f"""
+                                        - [{doc_title}]({doc['url']})
+                                        - Project: [{doc['project_url']}]({doc['project_url']})
+                                        - Procedure: [{doc['procedure_url']}]({doc['procedure_url']})
+                                        """)
+                                    except Exception as e:
+                                        filename = unquote(doc['url'].split('fileName=')[-1]) if 'fileName=' in doc['url'] else doc['url'].split('/')[-1]
+                                        st.markdown(f"""
+                                        - [{filename}]({doc['url']})
+                                        - Project: [{doc['project_url']}]({doc['project_url']})
+                                        - Procedure: [{doc['procedure_url']}]({doc['procedure_url']})
+                                        """)
                     
                     # Download section
                     st.markdown("---")
                     if st.button("Download All Documents"):
                         try:
                             with st.spinner("Creating zip file of all documents..."):
-                                zip_path = create_zip_of_documents(available_documents, scraper_session)
+                                zip_path = create_zip_of_documents(available_documents, st.session_state.scraper_session)
                             
                             with open(zip_path, "rb") as fp:
                                 btn = st.download_button(
@@ -232,16 +227,7 @@ if submit_button and keyword:
                     
                     # Navigation buttons
                     col1, col2, col3 = st.columns([1, 2, 1])
-                    with col1:
-                        if current_page > 1:
-                            if st.button("← Previous"):
-                                st.session_state.current_page -= 1
-                                st.rerun()
-                    with col3:
-                        if current_page < total_pages:
-                            if st.button("Next →"):
-                                st.session_state.current_page += 1
-                                st.rerun()
+       
                     
         except Exception as e:
             st.error(f"An error occurred: {str(e)}")
