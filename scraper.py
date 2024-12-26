@@ -135,8 +135,6 @@ def get_procedura_links(project_url: str, session=None):
 
     print(f"[INFO] Found {len(procedura_links)} procedure links on this project.")
     return procedura_links
-
-
 def get_document_links(procedura_url: str, session=None):
     if session is None:
         session = requests.Session()
@@ -149,16 +147,37 @@ def get_document_links(procedura_url: str, session=None):
         return []
 
     soup = BeautifulSoup(resp.text, "html.parser")
-    doc_links = []
+    documents = []
 
-    for a_tag in soup.find_all("a", href=True):
-        href = a_tag["href"]
+    # Find all document links
+    for link in soup.find_all("a", href=True):
+        href = link["href"]
         if "/File/Documento/" in href:
-            doc_url = urllib.parse.urljoin(procedura_url, href)
-            doc_links.append(doc_url)
+            doc_data = {
+                "url": urllib.parse.urljoin(BASE_URL, href),
+                "title": link.get_text(strip=True) or "Untitled Document",
+                "date": "N/A",
+                "type": "Document",
+                "size": "N/A"
+            }
+            
+            # Try to find metadata in parent elements
+            parent_div = link.find_parent("div", class_="documento")
+            if parent_div:
+                metadata_div = parent_div.find("div", class_="metadata")
+                if metadata_div:
+                    date_span = metadata_div.find("span", class_="data")
+                    type_span = metadata_div.find("span", class_="tipo")
+                    size_span = metadata_div.find("span", class_="dimensione")
+                    
+                    doc_data["date"] = date_span.get_text(strip=True) if date_span else "N/A"
+                    doc_data["type"] = type_span.get_text(strip=True) if type_span else "Document"
+                    doc_data["size"] = size_span.get_text(strip=True) if size_span else "N/A"
+            
+            documents.append(doc_data)
 
-    print(f"[INFO] Found {len(doc_links)} doc links on this procedure.")
-    return doc_links
+    print(f"[INFO] Found {len(documents)} documents with metadata")
+    return documents
 
 def run_scraper(keyword: str):
     # 1) Gather project detail URLs with session
