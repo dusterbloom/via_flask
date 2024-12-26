@@ -1,7 +1,9 @@
 import streamlit as st
 import os
+import re
 import requests
 from scraper import (
+    get_project_info,
     get_projects, 
     get_procedura_links, 
     get_document_links,
@@ -109,9 +111,14 @@ with st.form("search_form"):
         keyword = st.text_input("Enter a keyword:", key="search_keyword")
     
     with col2:
+        id_type = st.selectbox(
+            "ID Type:",
+            ["Project ID", "Procedure Code"],
+            help="Select whether to search by Project ID or Procedure Code"
+        )
         project_id = st.text_input(
-            "Project ID (optional):",
-            help="Enter a specific project ID to filter results"
+            f"Enter {id_type}:",
+            help="Enter the ID to search for specific project"
         )
     
     col3, col4 = st.columns([2, 1])
@@ -127,18 +134,30 @@ with st.form("search_form"):
 
 if submit_button:
     if not keyword.strip() and not project_id.strip():
-        st.error("Please enter either a keyword or a project ID.")
+        st.error("Please enter either a keyword or an ID.")
     else:
         try:
             with st.spinner("Searching for projects..."):
                 if project_id:
-                    # If project ID is provided, create direct URL
-                    project_urls = [f"{BASE_URL}/it-IT/Oggetti/Info/{project_id.strip()}"]
+                    if id_type == "Project ID":
+                        # If project ID is provided, create direct URL
+                        project_urls = [f"{BASE_URL}/it-IT/Oggetti/Info/{project_id.strip()}"]
+                    else:
+                        # If procedure code is provided, search for it
+                        st.info(f"Searching for procedure code: {project_id}")
+                        all_projects = fetch_projects(keyword if keyword else "", 0)
+                        project_urls = []
+                        
+                        # Check each project for matching procedure code
+                        for proj_url in all_projects:
+                            info = get_project_info(proj_url, st.session_state.scraper_session)
+                            if info and info['procedure_code'] == project_id.strip():
+                                project_urls.append(proj_url)
+                                break
                 else:
                     # Get projects using cached function
                     st.info("Fetching projects... This might take a while for large searches.")
                     project_urls = fetch_projects(keyword, max_projects)
-                    st.success(f"Found {len(project_urls)} projects")
                 
                 if not project_urls:
                     st.warning("No projects found.")
@@ -201,7 +220,9 @@ if submit_button:
                         
                         # Display documents grouped by project
                         for project_id, docs in project_documents.items():
-                            with st.expander(f"Project {project_id} ({len(docs)} documents)", expanded=False):
+                            project_info = get_project_info(docs[0]['project_url'], st.session_state.scraper_session)
+
+                            with st.expander(f"Project {project_id} ({len(docs)} documents)", expanded=True):
                                 for doc in docs:
                                     doc_id = doc['url'].split('/')[-1]
                                     metadata_url = f"https://va.mite.gov.it/it-IT/Oggetti/MetadatoDocumento/{doc_id}"
@@ -219,9 +240,11 @@ if submit_button:
                                             raise ValueError("Document title not found in metadata")
                                             
                                         st.markdown(f"""
-                                        - [{doc_title}]({doc['url']})
-                                        - Project: [{doc['project_url']}]({doc['project_url']})
-                                        - Procedure: [{doc['procedure_url']}]({doc['procedure_url']})
+                                        ### Project Information
+                                        - **Project ID:** {project_id}
+                                        - **Procedure Code:** {project_info['procedure_code'] if project_info else 'Unknown'}
+                                        - **Number of Documents:** {len(docs)}
+                                        - **Project URL:** [{project_id}]({docs[0]['project_url']})
                                         ---
                                         """)
                                     except Exception as e:
@@ -235,23 +258,62 @@ if submit_button:
                     
                     # Download section
                     st.markdown("---")
-                    if st.button("Download All Documents"):
-                        try:
-                            with st.spinner("Creating zip file of all documents..."):
-                                zip_path = create_zip_of_documents(available_documents, st.session_state.scraper_session)
-                            
-                            with open(zip_path, "rb") as fp:
-                                btn = st.download_button(
-                                    label="Download ZIP File",
-                                    data=fp,
-                                    file_name=os.path.basename(zip_path),
-                                    mime="application/zip"
-                                )
-                            
-                            st.success("All documents have been zipped successfully! Click the button above to download.")
-                            
-                        except Exception as e:
-                            st.error(f"Failed to create zip file: {str(e)}")
+                    if available_documents:
+                        st.write("Click on the links to open documents in a new tab:")
+                        
+                        # Add download all button at the top
+                        if st.button("Download All Documents"):
+                            try:
+                                with st.spinner("Creating zip file of all documents..."):
+                                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                                    zip_path = f"downloads/all_documents_{timestamp}.zip"
+                                    
+                                    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                                        progress_bar = st.progress(0)
+                                        for idx, doc in enumerate(available_documents):
+                                            try:
+                                                response = st.session_state.scraper_session.get(doc['url'], stream=True)
+                                                response.raise_for_status()
+                                                
+                                                # Get filename from URL or content disposition
+                                                filename = None
+                                                content_disposition = response.headers.get('Content-Disposition')
+                                                if content_disposition:
+                                                    matches = re.findall('filename=(.+)', content_disposition)
+                                                    if matches:
+                                                        filename = matches[0].strip('"')
+                                                
+                                                if not filename:
+                                                    filename = unquote(doc['url'].split('fileName=')[-1]) if 'fileName=' in doc['url'] else doc['url'].split('/')[-1]
+                                                
+                                                # Add project ID prefix to filename to organize files
+                                                project_id = doc['project_url'].split('/')[-1]
+                                                filename = f"{project_id}_{filename}"
+                                                
+                                                zipf.writestr(filename, response.content)
+                                                
+                                                # Update progress
+                                                progress = (idx + 1) / len(available_documents)
+                                                progress_bar.progress(progress)
+                                                time.sleep(0.5)  # Be nice to the server
+                                                
+                                            except Exception as e:
+                                                st.warning(f"Failed to download {doc['url']}: {str(e)}")
+                                                continue
+                                    
+                                    # Offer download of zip file
+                                    with open(zip_path, "rb") as fp:
+                                        btn = st.download_button(
+                                            label="Download ZIP File",
+                                            data=fp,
+                                            file_name=os.path.basename(zip_path),
+                                            mime="application/zip"
+                                        )
+                                    
+                                    st.success("All documents have been zipped successfully! Click the button above to download.")
+                                    
+                            except Exception as e:
+                                st.error(f"Failed to create zip file: {str(e)}")
                     
                     # Navigation buttons
                     col1, col2, col3 = st.columns([1, 2, 1])

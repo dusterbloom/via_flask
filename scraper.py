@@ -57,6 +57,39 @@ def get_filename_from_response(response: requests.Response) -> str:
     
     return filename
 
+def get_project_info(project_url: str, session: ScraperSession) -> Dict:
+    """Get project information including procedure code."""
+    try:
+        resp = session.get(project_url, timeout=10)
+        resp.raise_for_status()
+        
+        soup = BeautifulSoup(resp.text, "html.parser")
+        
+        # Find the procedure table
+        procedure_table = soup.find('table', class_='table')
+        if procedure_table:
+            rows = procedure_table.find_all('tr')
+            for row in rows:
+                cells = row.find_all('td')
+                if len(cells) >= 2:
+                    if 'Codice procedura' in cells[0].text:
+                        procedure_code = cells[1].text.strip()
+                        return {
+                            'project_id': project_url.split('/')[-1],
+                            'procedure_code': procedure_code,
+                            'url': project_url
+                        }
+        
+        return {
+            'project_id': project_url.split('/')[-1],
+            'procedure_code': None,
+            'url': project_url
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get project info for {project_url}: {e}")
+        return None
+
 def get_projects(keyword: str) -> Tuple[List[str], ScraperSession]:
     """Get all project URLs for a given keyword."""
     scraper_session = ScraperSession()
