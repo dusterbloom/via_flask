@@ -8,6 +8,11 @@ from datetime import datetime
 
 from bs4 import BeautifulSoup  # Add this if not already imported
 
+
+if 'current_page' not in st.session_state:
+    st.session_state['current_page'] = 1
+
+
 def create_zip_of_documents(documents, session):
     # Create a timestamp for the zip file name
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -172,8 +177,12 @@ if search_button and keyword:
                     
                     col1, col2, col3 = st.columns([1, 2, 1])
                     with col2:
-                        current_page = st.selectbox("Page", options=range(1, total_pages + 1), format_func=lambda x: f"Page {x} of {total_pages}")
-                    
+                        current_page = st.selectbox(
+                            "Page", 
+                            options=range(1, total_pages + 1), 
+                            format_func=lambda x: f"Page {x} of {total_pages}",
+                            key='current_page'  # Add this key to sync with session state
+                        )                    
                     start_idx = (current_page - 1) * docs_per_page
                     end_idx = min(start_idx + docs_per_page, len(available_documents))
                     
@@ -238,13 +247,15 @@ if search_button and keyword:
                     # Add page navigation buttons
                     col1, col2, col3 = st.columns([1, 2, 1])
                     with col1:
-                        if current_page > 1:
+                        if st.session_state.current_page > 1:
                             if st.button("← Previous"):
-                                st.session_state['current_page'] = current_page - 1
+                                st.session_state.current_page -= 1
                                 st.rerun()
                     with col3:
-                        if current_page < total_pages:
+                        if st.session_state.current_page < total_pages:
                             if st.button("Next →"):
+                                st.session_state.current_page += 1
+                                st.rerun()
                                 st.session_state['current_page'] = current_page + 1
                                 st.rerun()
                         
