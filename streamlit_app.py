@@ -141,77 +141,65 @@ if search_button and keyword:
                             for doc in project_docs:
                                 col1, col2, col3, col4 = st.columns([3, 2, 1, 1])
                                 with col1:
-                                    extension = get_file_extension(doc)
-                                    icon = {
-                                        '.pdf': '📄',
-                                        '.doc': '📝',
-                                        '.docx': '📝',
-                                        '.xls': '📊',
-                                        '.xlsx': '📊',
-                                        '.zip': '📦',
-                                        '.rar': '📦',
-                                        '.7z': '📦',
-                                        '.txt': '📃',
-                                        '.rtf': '📃'
-                                    }.get(extension, '📄')
-                                    
-                                    # Display document title with icon and extension
-                                    st.markdown(f"**{icon} {doc['title']}{extension}**")
+                                    # Display document name
+                                    st.markdown(f"📄 {doc['title']}")
+                                
                                 with col2:
-                                    # Display metadata
-                                    st.markdown(f"""
-                                    📅 {doc['date']}  
-                                    📁 {doc['type']}  
-                                    💾 {doc['size']}
+                                    # Display status indicators
+                                    st.markdown("""
+                                    📊 N/A  
+                                    📁 Document  
+                                    📏 N/A
                                     """)
+                                
                                 with col3:
-                                    # Individual selection checkbox
+                                    # Single checkbox for selection
                                     if st.checkbox("Select", key=f"select_{doc['url']}", 
                                                 value=doc in selected_docs):
                                         if doc not in selected_docs:
                                             selected_docs.append(doc)
+                                
                                 with col4:
-                                    # Individual download button
-                                    if st.button(f"Download", key=f"download_{doc['url']}"):
-                                        try:
-                                            response = session.get(doc['url'], stream=True)
-                                            response.raise_for_status()
-                                            st.download_button(
-                                                label="Save File",
-                                                data=response.content,
-                                                file_name=f"{doc['title']}{extension}",
-                                                mime="application/octet-stream"
-                                            )
-                                        except Exception as e:
-                                            st.error(f"Download failed: {str(e)}")
+                                    # Single download button
+                                    st.download_button(
+                                        label="Download",
+                                        data=session.get(doc['url']).content if doc['url'] else None,
+                                        file_name=doc['title'],
+                                        mime="application/octet-stream",
+                                        key=f"download_{doc['url']}"
+                                    )
+                                
                                 st.markdown("---")
 
-                # Download selected documents
-                if selected_docs:
-                    st.markdown("### Download Selected Documents")
-                    col1, col2 = st.columns([1, 3])
-                    with col1:
-                        st.write(f"Selected: {len(selected_docs)} documents")
-                    with col2:
-                        if st.button("Download Selected"):
-                            try:
-                                with st.spinner("Preparing ZIP file..."):
-                                    # Create a temporary directory for the zip file
-                                    with tempfile.NamedTemporaryFile(delete=False, suffix='.zip') as tmp_zip:
-                                        # Download all selected files
-                                        files_dict = download_multiple_files(selected_docs, session)
-                                        # Create zip file
-                                        create_zip_of_files(files_dict, tmp_zip.name)
-                                        # Offer zip file for download
-                                        with open(tmp_zip.name, 'rb') as f:
-                                            st.download_button(
-                                                label="Save ZIP File",
-                                                data=f,
-                                                file_name=f"VIA_documents_{keyword}.zip",
-                                                mime="application/zip"
-                                            )
-                            except Exception as e:
-                                st.error(f"Failed to create zip file: {str(e)}")
+                            # For batch downloads
+                            if selected_docs:
+                                st.markdown("### Download Selected Documents")
+                                col1, col2 = st.columns([1, 3])
+                                with col1:
+                                    st.write(f"Selected: {len(selected_docs)} documents")
+                                with col2:
+                                    # Create ZIP file only when user clicks download
+                                    if st.button("Download Selected"):
+                                        try:
+                                            with st.spinner("Preparing ZIP file..."):
+                                                with tempfile.NamedTemporaryFile(delete=False, suffix='.zip') as tmp_zip:
+                                                    files_dict = {}
+                                                    for doc in selected_docs:
+                                                        response = session.get(doc['url'])
+                                                        files_dict[doc['title']] = response.content
+                                                    
+                                                    create_zip_of_files(files_dict, tmp_zip.name)
+                                                    
+                                                    with open(tmp_zip.name, 'rb') as f:
+                                                        st.download_button(
+                                                            label="Save ZIP File",
+                                                            data=f,
+                                                            file_name=f"VIA_documents_{keyword}.zip",
+                                                            mime="application/zip"
+                                                        )
+                                        except Exception as e:
+                                            st.error(f"Failed to create zip file: {str(e)}")
+
 
         except Exception as e:
             st.error(f"An error occurred: {str(e)}")
