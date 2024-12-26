@@ -74,48 +74,40 @@ if search_button and keyword:
                     
                     # 2) Get procedure pages - pass the session
                     procedure_urls = get_procedura_links(project_url, session)
-                    # Initialize counters and document storage
-                    total_procedures = 0
-                    total_documents = 0
-                    available_documents = []  # New list to store document info
+                    total_procedures += len(procedure_urls)
+
+                    for proc_url in procedure_urls:
+                        # 3) Get document links - pass the session
+                        doc_urls = get_document_links(proc_url, session)
+                        total_documents += len(doc_urls)
+                        
+                        # Store document URLs instead of downloading
+                        for doc_url in doc_urls:
+                            available_documents.append({
+                                'url': doc_url,
+                                'project_url': project_url,
+                                'procedure_url': proc_url
+                            })
+
+                # Show final results
+                st.success(f"""
+                Search completed successfully!
+                - Projects processed: {len(project_urls)}
+                - Total procedures found: {total_procedures}
+                - Total documents available: {total_documents}
+                """)
+
+                # Display available documents in a table
+                if available_documents:
+                    st.write("### Available Documents")
+                    st.write("Click on the links to open documents in a new tab:")
                     
-                    # Process each project
-                    for i, project_url in enumerate(project_urls):
-                        status_text.text(f"Processing project {i+1}/{len(project_urls)}")
+                    for doc in available_documents:
+                        st.markdown(f"""
+                        - [Document]({doc['url']})
+                          - Project: [{doc['project_url']}]({doc['project_url']})
+                          - Procedure: [{doc['procedure_url']}]({doc['procedure_url']})
+                        """)
                         
-                        # 2) Get procedure pages - pass the session
-                        procedure_urls = get_procedura_links(project_url, session)
-                        total_procedures += len(procedure_urls)
-
-                        for proc_url in procedure_urls:
-                            # 3) Get document links - pass the session
-                            doc_urls = get_document_links(proc_url, session)
-                            total_documents += len(doc_urls)
-                            
-                            # Store document URLs instead of downloading
-                            for doc_url in doc_urls:
-                                available_documents.append({
-                                    'url': doc_url,
-                                    'project_url': project_url,
-                                    'procedure_url': proc_url
-                                })
-
-                    # Show final results
-                    st.success(f"""
-                    Search completed successfully!
-                    - Projects processed: {len(project_urls)}
-                    - Total procedures found: {total_procedures}
-                    - Total documents available: {total_documents}
-                    """)
-
-                    # Display available documents in a table
-                    if available_documents:
-                        st.write("### Available Documents")
-                        st.write("Click on the links to open documents in a new tab:")
-                        
-                        for doc in available_documents:
-                            st.markdown(f"""
-                            - [Document]({doc['url']})
-                            - Project: [{doc['project_url']}]({doc['project_url']})
-                            - Procedure: [{doc['procedure_url']}]({doc['procedure_url']})
-                            """)
+        except Exception as e:
+            st.error(f"An error occurred: {str(e)}")
