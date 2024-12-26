@@ -82,7 +82,9 @@ if search_button and keyword:
                         procedure_urls = get_procedura_links(project_url, session)
                         total_procedures += len(procedure_urls)
 
+                        # Inside the main search loop, update the status messages:
                         for proc_url in procedure_urls:
+                            status_text.text(f"Processing project {i+1}/{len(project_urls)} - Fetching documents from procedure...")
                             doc_urls = get_document_links(proc_url, session)
                             total_documents += len(doc_urls)
                             
@@ -90,7 +92,8 @@ if search_button and keyword:
                                 available_documents.append({
                                     'url': doc_url,
                                     'project_url': project_url,
-                                    'procedure_url': proc_url
+                                    'procedure_url': proc_url,
+                                    'date_found': time.strftime('%Y-%m-%d %H:%M:%S')  # Optional: add timestamp
                                 })
                             
                             # Add a small delay between requests
@@ -134,20 +137,26 @@ if search_button and keyword:
                         metadata_url = f"https://va.mite.gov.it/it-IT/Oggetti/MetadatoDocumento/{doc_id}"
                         
                         try:
-                            # Fetch metadata using the same session
                             metadata_response = session.get(metadata_url)
                             metadata_response.raise_for_status()
                             
                             soup = BeautifulSoup(metadata_response.text, 'html.parser')
-                            doc_title = soup.find('td', text='Documento').find_next('td').text.strip()
+                            doc_title_element = soup.find('td', text='Documento')
                             
+                            if doc_title_element and doc_title_element.find_next('td'):
+                                doc_title = doc_title_element.find_next('td').text.strip()
+                            else:
+                                raise ValueError("Document title not found in metadata")
+                                
                             st.markdown(f"""
                             - [{doc_title}]({doc['url']})
                             - Project: [{doc['project_url']}]({doc['project_url']})
                             - Procedure: [{doc['procedure_url']}]({doc['procedure_url']})
                             """)
                         except Exception as e:
-                            # Fallback to the URL filename if metadata fetch fails
+                            # More detailed error logging
+                            print(f"Error fetching metadata for {doc['url']}: {str(e)}")
+                            # Fallback to the URL filename
                             from urllib.parse import unquote
                             filename = unquote(doc['url'].split('fileName=')[-1]) if 'fileName=' in doc['url'] else doc['url'].split('/')[-1]
                             st.markdown(f"""
@@ -155,7 +164,6 @@ if search_button and keyword:
                             - Project: [{doc['project_url']}]({doc['project_url']})
                             - Procedure: [{doc['procedure_url']}]({doc['procedure_url']})
                             """)
-                    
                     # Add page navigation buttons
                     col1, col2, col3 = st.columns([1, 2, 1])
                     with col1:

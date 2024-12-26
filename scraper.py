@@ -25,12 +25,6 @@ if not os.path.exists(DOWNLOAD_FOLDER):
     os.makedirs(DOWNLOAD_FOLDER)
 
 
-def build_search_url(keyword: str, search_type="o"):
-    params = {
-        "Testo": keyword,
-        "t": search_type  # 'o' = progetti, 'd' = documenti
-    }
-    return f"{BASE_URL}{SEARCH_ENDPOINT}?{urllib.parse.urlencode(params)}"
 
 
 def download_file(doc_url: str, session=None):
