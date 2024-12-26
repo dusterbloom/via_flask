@@ -4,12 +4,18 @@ import time
 import urllib.parse
 import requests
 from bs4 import BeautifulSoup
+from typing import Tuple, List, Dict, Optional
+import logging
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Constants
 BASE_URL = "https://va.mite.gov.it"
 SEARCH_ENDPOINT = "/it-IT/Ricerca/ViaLibera"
 DOWNLOAD_FOLDER = "downloads"
-DELAY_BETWEEN_REQUESTS = 2.0
-
+DELAY_BETWEEN_REQUESTS = 1.0  # Reduced from 2.0 since we're using sessions effectively
 
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -19,263 +25,165 @@ HEADERS = {
     'Upgrade-Insecure-Requests': '1',
 }
 
-
-
-if not os.path.exists(DOWNLOAD_FOLDER):
-    os.makedirs(DOWNLOAD_FOLDER)
-
-
-
-
-def download_file(doc_url: str, session=None):
-    if session is None:
-        session = requests.Session()
-
-    try:
-        print(f"[INFO] Downloading: {doc_url}")
-        with session.get(doc_url, stream=True, timeout=20) as r:
-            r.raise_for_status()
-
-            content_disposition = r.headers.get("Content-Disposition", "")
-            filename = None
-
-            if content_disposition:
-                match = re.search(r'filename\*?=(["\']?)(.*?)\1(?:;|$)', content_disposition)
-                if match:
-                    filename_candidate = match.group(2).strip()
-                    filename_candidate = filename_candidate.strip('"').split('/')[-1]
-                    if filename_candidate:
-                        filename = filename_candidate
-
-            if not filename:
-                filename = os.path.basename(urllib.parse.urlsplit(doc_url).path)
-                if not filename:
-                    filename = f"doc_{int(time.time())}.pdf"
-
-            if not os.path.splitext(filename)[1]:
-                filename += ".pdf"
-
-            local_path = os.path.join(DOWNLOAD_FOLDER, filename)
-
-            if os.path.exists(local_path):
-                print(f"[INFO] '{filename}' already exists, skipping.")
-                return
-
-            with open(local_path, "wb") as f:
-                for chunk in r.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
-
-        print(f"[OK] Saved => {local_path}")
-
-    except Exception as e:
-        print(f"[ERROR] Download failed for {doc_url}: {e}")
-
-def build_search_url(keyword: str, search_type="o", page=1):
-    params = {
-        "Testo": keyword,
-        "t": search_type,  # 'o' = progetti, 'd' = documenti
-        "p": page  # Add page parameter
-    }
-    return f"{BASE_URL}{SEARCH_ENDPOINT}?{urllib.parse.urlencode(params)}"
-
-def get_projects(keyword: str):
-    session = requests.Session()
-    session.headers.update(HEADERS)
+class ScraperSession:
+    def __init__(self):
+        self.session = requests.Session()
+        self.session.headers.update(HEADERS)
+        self.session.get(BASE_URL)  # Initialize session with cookies
     
+    def get(self, url: str, **kwargs) -> requests.Response:
+        return self.session.get(url, **kwargs)
+
+def get_filename_from_response(response: requests.Response) -> str:
+    """Extract filename from response headers or URL."""
+    content_disposition = response.headers.get("Content-Disposition", "")
+    filename = None
+    
+    if content_disposition:
+        match = re.search(r'filename\*?=(["\']?)(.*?)\1(?:;|$)', content_disposition)
+        if match:
+            filename_candidate = match.group(2).strip()
+            filename_candidate = filename_candidate.strip('"').split('/')[-1]
+            if filename_candidate:
+                filename = filename_candidate
+    
+    if not filename:
+        filename = os.path.basename(urllib.parse.urlsplit(response.url).path)
+        if not filename:
+            filename = f"doc_{int(time.time())}.pdf"
+    
+    if not os.path.splitext(filename)[1]:
+        filename += ".pdf"
+    
+    return filename
+
+def get_projects(keyword: str) -> Tuple[List[str], ScraperSession]:
+    """Get all project URLs for a given keyword."""
+    scraper_session = ScraperSession()
     all_project_links = []
     current_page = 1
     
     while True:
-        search_url = build_search_url(keyword, search_type="o", page=current_page)
-        print(f"[INFO] Searching page {current_page} with keyword='{keyword}' => {search_url}")
+        search_url = f"{BASE_URL}{SEARCH_ENDPOINT}?Testo={urllib.parse.quote(keyword)}&t=o&p={current_page}"
+        logger.info(f"Searching page {current_page} with keyword='{keyword}'")
 
         try:
-            # First page only: get the main page to obtain any necessary cookies
-            if current_page == 1:
-                session.get(BASE_URL)
-            
-            # Get the search results page
-            resp = session.get(search_url, timeout=10)
+            resp = scraper_session.get(search_url, timeout=10)
             resp.raise_for_status()
             
             soup = BeautifulSoup(resp.text, "html.parser")
-            
-            # Find project links on current page
-            project_links = []
-            for a_tag in soup.find_all("a", href=True):
-                href = a_tag["href"]
-                if "/it-IT/Oggetti/Info/" in href:
-                    full_url = urllib.parse.urljoin(BASE_URL, href)
-                    project_links.append(full_url)
+            project_links = [
+                urllib.parse.urljoin(BASE_URL, a["href"])
+                for a in soup.find_all("a", href=True)
+                if "/it-IT/Oggetti/Info/" in a["href"]
+            ]
 
-            if not project_links:  # No more results found
+            if not project_links:
                 break
                 
             all_project_links.extend(project_links)
-            print(f"[INFO] Found {len(project_links)} project links on page {current_page}")
+            logger.info(f"Found {len(project_links)} project links on page {current_page}")
             
-            # Check if there's a next page by looking for pagination links
-            next_page_exists = False
-            for a_tag in soup.find_all("a", href=True):
-                if f"p={current_page + 1}" in a_tag["href"]:
-                    next_page_exists = True
-                    break
-            
-            if not next_page_exists:
+            # Check for next page
+            if not any(f"p={current_page + 1}" in a["href"] for a in soup.find_all("a", href=True)):
                 break
                 
             current_page += 1
-            time.sleep(DELAY_BETWEEN_REQUESTS)  # Be nice to the server between page requests
+            time.sleep(DELAY_BETWEEN_REQUESTS)
 
         except Exception as e:
-            print(f"[ERROR] Failed to get projects on page {current_page}: {e}")
+            logger.error(f"Failed to get projects on page {current_page}: {e}")
             break
 
-    print(f"[INFO] Total projects found across {current_page} pages: {len(all_project_links)}")
-    return all_project_links, session
+    logger.info(f"Total projects found: {len(all_project_links)}")
+    return all_project_links, scraper_session
 
-def get_document_info(doc_url: str, session=None):
-    if session is None:
-        session = requests.Session()
+def get_procedura_links(project_url: str, session: ScraperSession) -> List[str]:
+    """Get all procedure URLs for a given project."""
+    logger.info(f"Parsing project page => {project_url}")
     
     try:
-        # Just get the headers to check file info
-        r = session.head(doc_url, timeout=10)
-        r.raise_for_status()
-        
-        content_disposition = r.headers.get("Content-Disposition", "")
-        filename = None
-        
-        if content_disposition:
-            match = re.search(r'filename\*?=(["\']?)(.*?)\1(?:;|$)', content_disposition)
-            if match:
-                filename_candidate = match.group(2).strip()
-                filename_candidate = filename_candidate.strip('"').split('/')[-1]
-                if filename_candidate:
-                    filename = filename_candidate
-        
-        if not filename:
-            filename = os.path.basename(urllib.parse.urlsplit(doc_url).path)
-            if not filename:
-                filename = f"doc_{int(time.time())}.pdf"
-        
-        if not os.path.splitext(filename)[1]:
-            filename += ".pdf"
-            
-        return {
-            'url': doc_url,
-            'filename': filename,
-            'size': r.headers.get('Content-Length', 'Unknown'),
-            'type': r.headers.get('Content-Type', 'Unknown')
-        }
-        
-    except Exception as e:
-        print(f"[ERROR] Failed to get document info for {doc_url}: {e}")
-        return None
-    
+        resp = session.get(project_url, timeout=10)
+        resp.raise_for_status()
 
-def get_procedura_links(project_url: str, session=None):
-    if session is None:
-        session = requests.Session()
-        session.headers.update(HEADERS)
-    
-    print(f"[INFO] Parsing project page => {project_url}")
-    resp = session.get(project_url, timeout=10)
-    if resp.status_code != 200:
-        print(f"[WARN] Could not retrieve {project_url} (status={resp.status_code}).")
+        soup = BeautifulSoup(resp.text, "html.parser")
+        procedura_links = [
+            urllib.parse.urljoin(project_url, a["href"])
+            for a in soup.find_all("a", href=True)
+            if "/it-IT/Oggetti/Documentazione/" in a["href"]
+        ]
+
+        logger.info(f"Found {len(procedura_links)} procedure links")
+        return procedura_links
+
+    except Exception as e:
+        logger.error(f"Failed to get procedure links for {project_url}: {e}")
         return []
 
-    soup = BeautifulSoup(resp.text, "html.parser")
-    procedura_links = []
-
-    for a_tag in soup.find_all("a", href=True):
-        href = a_tag["href"]
-        if "/it-IT/Oggetti/Documentazione/" in href:
-            full_url = urllib.parse.urljoin(project_url, href)
-            procedura_links.append(full_url)
-
-    print(f"[INFO] Found {len(procedura_links)} procedure links on this project.")
-    return procedura_links
-
-def get_document_links(procedura_url: str, session=None):
-    if session is None:
-        session = requests.Session()
-        session.headers.update(HEADERS)
-    
+def get_document_links(procedura_url: str, session: ScraperSession) -> List[str]:
+    """Get all document URLs from a procedure page."""
     all_doc_links = []
     current_page = 1
     
     while True:
-        # Construct URL with pagination
-        page_url = procedura_url
-        if current_page > 1:
-            page_url = f"{procedura_url}?pagina={current_page}"
-            
-        print(f"[INFO] Parsing procedure page {current_page} => {page_url}")
+        page_url = procedura_url if current_page == 1 else f"{procedura_url}?pagina={current_page}"
+        logger.info(f"Parsing procedure page {current_page}")
         
         try:
-            resp = session.get(page_url, timeout=1000)
+            resp = session.get(page_url, timeout=30)
             resp.raise_for_status()
 
             soup = BeautifulSoup(resp.text, "html.parser")
-            doc_links = []
+            doc_links = [
+                urllib.parse.urljoin(procedura_url, a["href"])
+                for a in soup.find_all("a", href=True)
+                if "/File/Documento/" in a["href"]
+            ]
 
-            # Find document links on current page
-            for a_tag in soup.find_all("a", href=True):
-                href = a_tag["href"]
-                if "/File/Documento/" in href:
-                    doc_url = urllib.parse.urljoin(procedura_url, href)
-                    doc_links.append(doc_url)
-
-            if not doc_links:  # No documents found on this page
+            if not doc_links:
                 break
                 
             all_doc_links.extend(doc_links)
-            print(f"[INFO] Found {len(doc_links)} doc links on page {current_page}")
+            logger.info(f"Found {len(doc_links)} document links on page {current_page}")
             
-            # Check if there's a next page by looking for pagination links
-            next_page_exists = False
-            pagination_links = soup.find_all("a", href=True)
-            for link in pagination_links:
-                if f"pagina={current_page + 1}" in link["href"]:
-                    next_page_exists = True
-                    break
-            
-            if not next_page_exists:
+            if not any(f"pagina={current_page + 1}" in a["href"] for a in soup.find_all("a", href=True)):
                 break
                 
             current_page += 1
-            time.sleep(DELAY_BETWEEN_REQUESTS)  # Be nice to the server
+            time.sleep(DELAY_BETWEEN_REQUESTS)
 
         except Exception as e:
-            print(f"[ERROR] Failed to get documents on page {current_page}: {e}")
+            logger.error(f"Failed to get documents on page {current_page}: {e}")
             break
 
-    print(f"[INFO] Total documents found across {current_page} pages: {len(all_doc_links)}")
     return all_doc_links
 
-def run_scraper(keyword: str):
-    # 1) Gather project detail URLs with session
-    project_urls, session = get_projects(keyword)
+def get_document_metadata(doc_url: str, session: ScraperSession) -> Optional[Dict]:
+    """Get metadata for a document."""
+    try:
+        response = session.get(doc_url, stream=True, timeout=10)
+        response.raise_for_status()
+        
+        filename = get_filename_from_response(response)
+        
+        return {
+            'url': doc_url,
+            'filename': filename,
+            'size': response.headers.get('Content-Length', 'Unknown'),
+            'type': response.headers.get('Content-Type', 'Unknown'),
+            'last_modified': response.headers.get('Last-Modified', 'Unknown')
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get document metadata for {doc_url}: {e}")
+        return None
 
-    for project_url in project_urls:
-        try:
-            # 2) For each project, gather procedure pages
-            procedure_urls = get_procedura_links(project_url, session)
-
-            for proc_url in procedure_urls:
-                # 3) Gather the final doc links
-                doc_urls = get_document_links(proc_url, session)
-
-                # 4) Download them
-                for durl in doc_urls:
-                    download_file(durl, session)
-                    time.sleep(DELAY_BETWEEN_REQUESTS)
-
-            # Wait a bit between projects
-            time.sleep(DELAY_BETWEEN_REQUESTS)
-            
-        except Exception as e:
-            print(f"[ERROR] Failed processing project {project_url}: {e}")
-            continue
+def download_document(doc_url: str, session: ScraperSession) -> Optional[bytes]:
+    """Download a document and return its content."""
+    try:
+        response = session.get(doc_url, stream=True, timeout=30)
+        response.raise_for_status()
+        return response.content
+    except Exception as e:
+        logger.error(f"Failed to download document {doc_url}: {e}")
+        return None
