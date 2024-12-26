@@ -1,6 +1,14 @@
 import streamlit as st
 import os
-from scraper import get_projects, get_procedura_links, get_document_links
+import requests
+from scraper import (
+    get_projects, 
+    get_procedura_links, 
+    get_document_links,
+    HEADERS,  # Import constants from scraper
+    BASE_URL,
+    ScraperSession
+)
 import time
 import base64
 import zipfile
@@ -19,17 +27,17 @@ if 'available_documents' not in st.session_state:
 # Cached functions for expensive operations
 @st.cache_data(ttl=3600)  # Cache for 1 hour
 def fetch_projects(keyword, max_projects):
-    project_urls, session = get_projects(keyword)
+    project_urls, _ = get_projects(keyword)
     if max_projects > 0:
         project_urls = project_urls[:max_projects]
-    return project_urls, session
+    return project_urls
 
 @st.cache_data(ttl=3600)
-def fetch_documents(project_url, session):
-    procedure_urls = get_procedura_links(project_url, session)
+def fetch_documents(project_url, _session):
+    procedure_urls = get_procedura_links(project_url, _session)
     documents = []
     for proc_url in procedure_urls:
-        doc_urls = get_document_links(proc_url, session)
+        doc_urls = get_document_links(proc_url, _session)
         for doc_url in doc_urls:
             documents.append({
                 'url': doc_url,
@@ -40,14 +48,14 @@ def fetch_documents(project_url, session):
     return documents, len(procedure_urls)
 
 @st.cache_data(ttl=600)  # Cache for 10 minutes
-def create_zip_of_documents(documents, session):
+def create_zip_of_documents(documents, _session):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     zip_path = f"downloads/documents_{timestamp}.zip"
     
     with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
         for idx, doc in enumerate(documents):
             try:
-                response = session.get(doc['url'], stream=True)
+                response = _session.get(doc['url'], stream=True)
                 response.raise_for_status()
                 
                 filename = None
@@ -70,7 +78,7 @@ def create_zip_of_documents(documents, session):
     
     return zip_path
 
-def display_document_page(documents, current_page, docs_per_page, session):
+def display_document_page(documents, current_page, docs_per_page, _session):
     start_idx = (current_page - 1) * docs_per_page
     end_idx = min(start_idx + docs_per_page, len(documents))
     
@@ -79,7 +87,7 @@ def display_document_page(documents, current_page, docs_per_page, session):
         metadata_url = f"https://va.mite.gov.it/it-IT/Oggetti/MetadatoDocumento/{doc_id}"
         
         try:
-            metadata_response = session.get(metadata_url)
+            metadata_response = _session.get(metadata_url)
             metadata_response.raise_for_status()
             
             soup = BeautifulSoup(metadata_response.text, 'html.parser')
@@ -140,11 +148,14 @@ if submit_button and keyword:
         try:
             with st.spinner("Searching for projects..."):
                 # Get projects using cached function
-                project_urls, session = fetch_projects(keyword, max_projects)
+                project_urls = fetch_projects(keyword, max_projects)
                 
                 if not project_urls:
                     st.warning("No projects found for this keyword.")
                     st.stop()
+                
+                # Create a new scraper session for this run
+                scraper_session = ScraperSession()
                 
                 st.success(f"Found {len(project_urls)} projects")
                 
@@ -161,7 +172,7 @@ if submit_button and keyword:
                     status_text.text(f"Processing project {i+1}/{len(project_urls)}")
                     
                     try:
-                        docs, proc_count = fetch_documents(project_url, session)
+                        docs, proc_count = fetch_documents(project_url, scraper_session)
                         available_documents.extend(docs)
                         total_procedures += proc_count
                     except Exception as e:
