@@ -77,77 +77,41 @@ def download_file(doc_url: str, session=None):
     except Exception as e:
         print(f"[ERROR] Download failed for {doc_url}: {e}")
 
-def get_projects(keyword: str, max_results=None):
-    """
-    Get project URLs from search results with pagination support
-    
-    Args:
-        keyword (str): Search keyword
-        max_results (int, optional): Maximum number of results to return. None for all results.
-    """
+def get_projects(keyword: str):
+    # Create a session object
     session = requests.Session()
     session.headers.update(HEADERS)
     
-    all_project_links = []
-    page = 1
-    
-    while True:
-        # Build URL with pagination
-        search_url = build_search_url(keyword, search_type="o", page=page)
-        print(f"[INFO] Searching page {page} with keyword='{keyword}' => {search_url}")
+    search_url = build_search_url(keyword, search_type="o")
+    print(f"[INFO] Searching for projects with keyword='{keyword}' => {search_url}")
 
-        try:
-            if page == 1:
-                # Get main page for cookies only on first request
-                session.get(BASE_URL)
-            
-            resp = session.get(search_url, timeout=10)
-            resp.raise_for_status()
-            
-            soup = BeautifulSoup(resp.text, "html.parser")
-            
-            # Find project links on current page
-            page_links = []
-            for a_tag in soup.find_all("a", href=True):
-                href = a_tag["href"]
-                if "/it-IT/Oggetti/Info/" in href:
-                    full_url = urllib.parse.urljoin(BASE_URL, href)
-                    page_links.append(full_url)
-            
-            if not page_links:
-                # No more results found
-                break
-                
-            all_project_links.extend(page_links)
-            
-            # Check if we've reached max_results
-            if max_results and len(all_project_links) >= max_results:
-                all_project_links = all_project_links[:max_results]
-                break
-            
-            # Check for next page
-            next_page = soup.find("a", class_="next") or soup.find("a", text="»")
-            if not next_page:
-                break
-                
-            page += 1
-            
-        except Exception as e:
-            print(f"[ERROR] Failed to get projects on page {page}: {e}")
-            break
+    try:
+        # First, get the main page to obtain any necessary cookies
+        session.get(BASE_URL)
+        
+        # Now perform the search
+        resp = session.get(search_url, timeout=10)
+        resp.raise_for_status()
+        
+        soup = BeautifulSoup(resp.text, "html.parser")
+        
+        # Debug output
+        print(f"[DEBUG] Response status: {resp.status_code}")
+        print(f"[DEBUG] Response content length: {len(resp.text)}")
+        
+        project_links = []
+        for a_tag in soup.find_all("a", href=True):
+            href = a_tag["href"]
+            if "/it-IT/Oggetti/Info/" in href:
+                full_url = urllib.parse.urljoin(BASE_URL, href)
+                project_links.append(full_url)
 
-    print(f"[INFO] Found total of {len(all_project_links)} project detail links")
-    return all_project_links, session
+        print(f"[INFO] Found {len(project_links)} project detail links.")
+        return project_links, session  # Return both the links and session
 
-def build_search_url(keyword: str, search_type="o", page=1):
-    """Build search URL with pagination support"""
-    params = {
-        "Testo": keyword,
-        "t": search_type,  # 'o' = progetti, 'd' = documenti
-        "p": page,  # Add page parameter
-        "ps": 50  # Set page size to maximum
-    }
-    return f"{BASE_URL}{SEARCH_ENDPOINT}?{urllib.parse.urlencode(params)}"
+    except Exception as e:
+        print(f"[ERROR] Failed to get projects: {e}")
+        return [], session
 
 def get_procedura_links(project_url: str, session=None):
     if session is None:
@@ -172,6 +136,7 @@ def get_procedura_links(project_url: str, session=None):
     print(f"[INFO] Found {len(procedura_links)} procedure links on this project.")
     return procedura_links
 
+
 def get_document_links(procedura_url: str, session=None):
     if session is None:
         session = requests.Session()
@@ -184,67 +149,16 @@ def get_document_links(procedura_url: str, session=None):
         return []
 
     soup = BeautifulSoup(resp.text, "html.parser")
-    documents = []
+    doc_links = []
 
-    # Find all document containers
-    doc_containers = soup.find_all("div", class_="documento") or soup.find_all("tr", class_="documento")
-    
-    for container in doc_containers:
-        # Find the document link
-        link = container.find("a", href=True)
-        if not link:
-            continue
-            
-        href = link["href"]
-        if not any(ext in href.lower() for ext in [
-            '/file/documento/',
-            '.pdf', '.doc', '.docx', '.xls', '.xlsx',
-            '.zip', '.rar', '.7z', '.txt', '.rtf'
-        ]):
-            continue
+    for a_tag in soup.find_all("a", href=True):
+        href = a_tag["href"]
+        if "/File/Documento/" in href:
+            doc_url = urllib.parse.urljoin(procedura_url, href)
+            doc_links.append(doc_url)
 
-        # Get the document title - try multiple approaches
-        title = None
-        # Try to get title from specific title element
-        title_elem = container.find("div", class_="titolo") or container.find("td", class_="titolo")
-        if title_elem:
-            title = title_elem.get_text(strip=True)
-        
-        # If no specific title element, try the link text
-        if not title:
-            title = link.get_text(strip=True)
-            
-        # If still no title, try parent text
-        if not title:
-            title = container.get_text(strip=True)
-            
-        # If still nothing, use a fallback
-        if not title:
-            title = "Scarica il documento"
-
-        doc_data = {
-            "url": urllib.parse.urljoin(BASE_URL, href),
-            "title": title,
-            "date": "N/A",
-            "type": "Document",
-            "size": "N/A"
-        }
-        
-        # Try to find metadata
-        metadata_div = container.find("div", class_="metadata")
-        if metadata_div:
-            date_span = metadata_div.find("span", class_="data")
-            type_span = metadata_div.find("span", class_="tipo")
-            size_span = metadata_div.find("span", class_="dimensione")
-            
-            doc_data["date"] = date_span.get_text(strip=True) if date_span else "N/A"
-            doc_data["type"] = type_span.get_text(strip=True) if type_span else "Document"
-            doc_data["size"] = size_span.get_text(strip=True) if size_span else "N/A"
-        
-        documents.append(doc_data)
-
-    print(f"[INFO] Found {len(documents)} documents with metadata")
-    return documents
+    print(f"[INFO] Found {len(doc_links)} doc links on this procedure.")
+    return doc_links
 
 def run_scraper(keyword: str):
     # 1) Gather project detail URLs with session
