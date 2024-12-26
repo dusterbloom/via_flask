@@ -54,8 +54,7 @@ if search_button and keyword:
         try:
             with st.spinner("Searching for projects..."):
                 # 1) Get project URLs and session
-                project_urls, session = get_projects(keyword)  # Make sure to unpack both values
-                  # Apply the project limit if specified
+                project_urls, session = get_projects(keyword)
                 if max_projects > 0:
                     project_urls = project_urls[:max_projects]
                 st.info(f"Found {len(project_urls)} projects to process")
@@ -64,9 +63,10 @@ if search_button and keyword:
                 progress_bar = st.progress(0)
                 status_text = st.empty()
 
-                # Initialize counters
+                # Initialize counters and document storage
                 total_procedures = 0
                 total_documents = 0
+                available_documents = []  # New list to store document info
                 
                 # Process each project
                 for i, project_url in enumerate(project_urls):
@@ -74,68 +74,48 @@ if search_button and keyword:
                     
                     # 2) Get procedure pages - pass the session
                     procedure_urls = get_procedura_links(project_url, session)
-                    total_procedures += len(procedure_urls)
+                    # Initialize counters and document storage
+                    total_procedures = 0
+                    total_documents = 0
+                    available_documents = []  # New list to store document info
+                    
+                    # Process each project
+                    for i, project_url in enumerate(project_urls):
+                        status_text.text(f"Processing project {i+1}/{len(project_urls)}")
+                        
+                        # 2) Get procedure pages - pass the session
+                        procedure_urls = get_procedura_links(project_url, session)
+                        total_procedures += len(procedure_urls)
 
-                    for proc_url in procedure_urls:
-                        # 3) Get document links - pass the session
-                        doc_urls = get_document_links(proc_url, session)
-                        total_documents += len(doc_urls)
+                        for proc_url in procedure_urls:
+                            # 3) Get document links - pass the session
+                            doc_urls = get_document_links(proc_url, session)
+                            total_documents += len(doc_urls)
+                            
+                            # Store document URLs instead of downloading
+                            for doc_url in doc_urls:
+                                available_documents.append({
+                                    'url': doc_url,
+                                    'project_url': project_url,
+                                    'procedure_url': proc_url
+                                })
 
-                        # 4) Download documents - pass the session
-                        for doc_url in doc_urls:
-                            download_file(doc_url, session)
-                            time.sleep(2.0)  # Respect rate limiting
+                    # Show final results
+                    st.success(f"""
+                    Search completed successfully!
+                    - Projects processed: {len(project_urls)}
+                    - Total procedures found: {total_procedures}
+                    - Total documents available: {total_documents}
+                    """)
 
-                    # Update progress
-                    progress = (i + 1) / len(project_urls)
-                    progress_bar.progress(progress)
-
-                # Show final results
-                st.success(f"""
-                Scraping completed successfully!
-                - Projects processed: {len(project_urls)}
-                - Total procedures found: {total_procedures}
-                - Total documents downloaded: {total_documents}
-                
-                Check the 'downloads' folder for the downloaded files.
-                """)
-
-        except Exception as e:
-            st.error(f"An error occurred: {str(e)}")
-            # Add debug information
-            st.error("Debug info:")
-            st.code(str(e.__class__.__name__))
-            import traceback
-            st.code(traceback.format_exc())
-
-# Show downloaded files with download buttons
-if os.path.exists("downloads"):
-    with st.expander("View and Download Files"):
-        files = os.listdir("downloads")
-        if files:
-            st.write("Downloaded files:")
-            for file in files:
-                file_path = os.path.join("downloads", file)
-                col1, col2 = st.columns([3, 1])
-                with col1:
-                    st.text(f"📄 {file}")
-                with col2:
-                    st.markdown(
-                        get_binary_file_downloader_html(
-                            file_path, 
-                            "Download"
-                        ),
-                        unsafe_allow_html=True
-                    )
-                st.markdown("---")
-        else:
-            st.write("No files downloaded yet.")
-
-# Add a clear downloads button
-if st.button("Clear Downloads Folder"):
-    try:
-        for file in os.listdir("downloads"):
-            os.remove(os.path.join("downloads", file))
-        st.success("Downloads folder cleared!")
-    except Exception as e:
-        st.error(f"Error clearing downloads: {str(e)}")
+                    # Display available documents in a table
+                    if available_documents:
+                        st.write("### Available Documents")
+                        st.write("Click on the links to open documents in a new tab:")
+                        
+                        for doc in available_documents:
+                            st.markdown(f"""
+                            - [Document]({doc['url']})
+                            - Project: [{doc['project_url']}]({doc['project_url']})
+                            - Procedure: [{doc['procedure_url']}]({doc['procedure_url']})
+                            """)
