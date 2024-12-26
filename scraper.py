@@ -77,7 +77,6 @@ def download_file(doc_url: str, session=None):
     except Exception as e:
         print(f"[ERROR] Download failed for {doc_url}: {e}")
 
-
 def get_projects(keyword: str):
     # Create a session object
     session = requests.Session()
@@ -108,7 +107,7 @@ def get_projects(keyword: str):
                 project_links.append(full_url)
 
         print(f"[INFO] Found {len(project_links)} project detail links.")
-        return project_links, session  # Return the session for reuse
+        return project_links, session  # Return both the links and session
 
     except Exception as e:
         print(f"[ERROR] Failed to get projects: {e}")

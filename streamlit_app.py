@@ -28,8 +28,8 @@ if search_button and keyword:
     else:
         try:
             with st.spinner("Searching for projects..."):
-                # 1) Get project URLs
-                project_urls = get_projects(keyword)
+                # 1) Get project URLs and session
+                project_urls, session = get_projects(keyword)  # Make sure to unpack both values
                 st.info(f"Found {len(project_urls)} projects")
 
                 # Create a progress bar
@@ -44,18 +44,18 @@ if search_button and keyword:
                 for i, project_url in enumerate(project_urls):
                     status_text.text(f"Processing project {i+1}/{len(project_urls)}")
                     
-                    # 2) Get procedure pages
-                    procedure_urls = get_procedura_links(project_url)
+                    # 2) Get procedure pages - pass the session
+                    procedure_urls = get_procedura_links(project_url, session)
                     total_procedures += len(procedure_urls)
 
                     for proc_url in procedure_urls:
-                        # 3) Get document links
-                        doc_urls = get_document_links(proc_url)
+                        # 3) Get document links - pass the session
+                        doc_urls = get_document_links(proc_url, session)
                         total_documents += len(doc_urls)
 
-                        # 4) Download documents
+                        # 4) Download documents - pass the session
                         for doc_url in doc_urls:
-                            download_file(doc_url)
+                            download_file(doc_url, session)
                             time.sleep(2.0)  # Respect rate limiting
 
                     # Update progress
@@ -74,6 +74,11 @@ if search_button and keyword:
 
         except Exception as e:
             st.error(f"An error occurred: {str(e)}")
+            # Add debug information
+            st.error("Debug info:")
+            st.code(str(e.__class__.__name__))
+            import traceback
+            st.code(traceback.format_exc())
 
 # Show download folder contents
 if os.path.exists("downloads"):
