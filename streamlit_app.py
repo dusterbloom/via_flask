@@ -1,8 +1,7 @@
 import streamlit as st
 import os
-from scraper import get_projects, get_procedura_links, get_document_links, download_file
+from scraper import get_projects, get_procedura_links, get_document_links
 import time
-import base64
 import tempfile
 import zipfile
 
@@ -19,9 +18,9 @@ def get_file_extension(doc):
         'PDF': '.pdf',
         'WORD': '.doc',
         'EXCEL': '.xls',
-        'DOCUMENTO': '.pdf',  # Default for generic documents
-        'ARCHIVIO': '.zip',   # Default for archives
-        'TESTO': '.txt'       # Default for text files
+        'DOCUMENTO': '.pdf',
+        'ARCHIVIO': '.zip',
+        'TESTO': '.txt'
     }
     
     doc_type = doc.get('type', '').upper()
@@ -72,8 +71,15 @@ This tool allows you to search and preview documents from the VIA Database.
 Enter a keyword below to start searching.
 """)
 
-# Search input
-keyword = st.text_input("Enter a keyword:", key="search_keyword")
+# Search controls
+col1, col2 = st.columns([3, 1])
+with col1:
+    keyword = st.text_input("Enter a keyword:", key="search_keyword")
+with col2:
+    max_results = st.number_input("Max projects (0 = all):", 
+                                min_value=0, 
+                                value=10)
+
 search_button = st.button("Search")
 
 if search_button and keyword:
@@ -84,12 +90,15 @@ if search_button and keyword:
         try:
             with st.spinner("Searching for projects..."):
                 # Get project URLs and session
-                project_urls, session = get_projects(keyword)
+                project_urls, session = get_projects(keyword, 
+                                                  max_results=max_results if max_results > 0 else None)
                 st.info(f"Found {len(project_urls)} projects")
 
                 results = []
+                progress = st.progress(0)
 
                 for i, project_url in enumerate(project_urls):
+                    progress.progress((i + 1) / len(project_urls))
                     st.text(f"Scanning project {i+1}/{len(project_urls)}...")
                     
                     # Get procedure pages
@@ -111,6 +120,9 @@ if search_button and keyword:
                 # Display results
                 st.success(f"Found {len(results)} documents across {len(project_urls)} projects")
                 
+                # Initialize selected docs list
+                selected_docs = []
+                
                 # Group documents by project
                 for i in range(len(project_urls)):
                     project_docs = [r for r in results if r['project_number'] == i+1]
@@ -122,8 +134,9 @@ if search_button and keyword:
                             
                             # Add "Select All" for this project
                             if st.checkbox(f"Select all documents from Project #{i+1}", key=f"select_all_{i}"):
-                                selected_docs = project_docs
+                                selected_docs.extend(project_docs)
                             
+                            # Display documents
                             # Display documents
                             for doc in project_docs:
                                 col1, col2, col3, col4 = st.columns([3, 2, 1, 1])
@@ -142,8 +155,10 @@ if search_button and keyword:
                                         '.rtf': '📃'
                                     }.get(extension, '📄')
                                     
+                                    # Display document title with icon and extension
                                     st.markdown(f"**{icon} {doc['title']}{extension}**")
                                 with col2:
+                                    # Display metadata
                                     st.markdown(f"""
                                     📅 {doc['date']}  
                                     📁 {doc['type']}  
@@ -152,7 +167,7 @@ if search_button and keyword:
                                 with col3:
                                     # Individual selection checkbox
                                     if st.checkbox("Select", key=f"select_{doc['url']}", 
-                                                 value=doc in selected_docs):
+                                                value=doc in selected_docs):
                                         if doc not in selected_docs:
                                             selected_docs.append(doc)
                                 with col4:
@@ -174,24 +189,29 @@ if search_button and keyword:
                 # Download selected documents
                 if selected_docs:
                     st.markdown("### Download Selected Documents")
-                    if st.button("Download Selected"):
-                        try:
-                            # Create a temporary directory for the zip file
-                            with tempfile.NamedTemporaryFile(delete=False, suffix='.zip') as tmp_zip:
-                                # Download all selected files
-                                files_dict = download_multiple_files(selected_docs, session)
-                                # Create zip file
-                                create_zip_of_files(files_dict, tmp_zip.name)
-                                # Offer zip file for download
-                                with open(tmp_zip.name, 'rb') as f:
-                                    st.download_button(
-                                        label="Save ZIP File",
-                                        data=f,
-                                        file_name=f"VIA_documents_{keyword}.zip",
-                                        mime="application/zip"
-                                    )
-                        except Exception as e:
-                            st.error(f"Failed to create zip file: {str(e)}")
+                    col1, col2 = st.columns([1, 3])
+                    with col1:
+                        st.write(f"Selected: {len(selected_docs)} documents")
+                    with col2:
+                        if st.button("Download Selected"):
+                            try:
+                                with st.spinner("Preparing ZIP file..."):
+                                    # Create a temporary directory for the zip file
+                                    with tempfile.NamedTemporaryFile(delete=False, suffix='.zip') as tmp_zip:
+                                        # Download all selected files
+                                        files_dict = download_multiple_files(selected_docs, session)
+                                        # Create zip file
+                                        create_zip_of_files(files_dict, tmp_zip.name)
+                                        # Offer zip file for download
+                                        with open(tmp_zip.name, 'rb') as f:
+                                            st.download_button(
+                                                label="Save ZIP File",
+                                                data=f,
+                                                file_name=f"VIA_documents_{keyword}.zip",
+                                                mime="application/zip"
+                                            )
+                            except Exception as e:
+                                st.error(f"Failed to create zip file: {str(e)}")
 
         except Exception as e:
             st.error(f"An error occurred: {str(e)}")
