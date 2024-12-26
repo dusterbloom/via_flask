@@ -3,6 +3,8 @@ import os
 from scraper import get_projects, get_procedura_links, get_document_links, download_file
 import time
 import base64
+import tempfile
+import zipfile
 
 # Function to create a download link for a file
 def get_binary_file_downloader_html(file_path, file_label):
@@ -10,6 +12,25 @@ def get_binary_file_downloader_html(file_path, file_label):
         data = f.read()
     b64 = base64.b64encode(data).decode()
     return f'<a href="data:application/octet-stream;base64,{b64}" download="{os.path.basename(file_path)}">{file_label}</a>'
+
+def create_zip_of_files(files_dict, zip_path):
+    """Create a zip file containing multiple documents"""
+    with zipfile.ZipFile(zip_path, 'w') as zipf:
+        for filename, file_data in files_dict.items():
+            zipf.writestr(filename, file_data)
+
+def download_multiple_files(urls, session):
+    """Download multiple files and return them as a dictionary"""
+    files_dict = {}
+    for doc in urls:
+        try:
+            response = session.get(doc['url'], stream=True)
+            response.raise_for_status()
+            filename = f"{doc['title']}.pdf" if doc['title'] else doc['url'].split('/')[-1]
+            files_dict[filename] = response.content
+        except Exception as e:
+            st.warning(f"Failed to download {doc['title']}: {str(e)}")
+    return files_dict
 
 # Page config
 st.set_page_config(
@@ -49,7 +70,6 @@ if search_button and keyword:
 
                 results = []
 
-                # Process each project
                 for i, project_url in enumerate(project_urls):
                     st.text(f"Scanning project {i+1}/{len(project_urls)}...")
                     
@@ -81,9 +101,13 @@ if search_button and keyword:
                             st.markdown(f"🔗 [View Project Details]({project_docs[0]['project_url']})")
                             st.markdown("---")
                             
+                            # Add "Select All" for this project
+                            if st.checkbox(f"Select all documents from Project #{i+1}", key=f"select_all_{i}"):
+                                selected_docs = project_docs
+                            
                             # Display documents
                             for doc in project_docs:
-                                col1, col2, col3 = st.columns([3, 2, 1])
+                                col1, col2, col3, col4 = st.columns([3, 2, 1, 1])
                                 with col1:
                                     st.markdown(f"**{doc['title']}**")
                                 with col2:
@@ -93,7 +117,13 @@ if search_button and keyword:
                                     💾 {doc['size']}
                                     """)
                                 with col3:
-                                    # Add download button
+                                    # Individual selection checkbox
+                                    if st.checkbox("Select", key=f"select_{doc['url']}", 
+                                                 value=doc in selected_docs):
+                                        if doc not in selected_docs:
+                                            selected_docs.append(doc)
+                                with col4:
+                                    # Individual download button
                                     if st.button(f"Download", key=f"download_{doc['url']}"):
                                         try:
                                             download_file(doc['url'], session)
@@ -101,6 +131,28 @@ if search_button and keyword:
                                         except Exception as e:
                                             st.error(f"Download failed: {str(e)}")
                                 st.markdown("---")
+
+                # Download selected documents
+                if selected_docs:
+                    st.markdown("### Download Selected Documents")
+                    if st.button("Download Selected"):
+                        try:
+                            # Create a temporary directory for the zip file
+                            with tempfile.NamedTemporaryFile(delete=False, suffix='.zip') as tmp_zip:
+                                # Download all selected files
+                                files_dict = download_multiple_files(selected_docs, session)
+                                # Create zip file
+                                create_zip_of_files(files_dict, tmp_zip.name)
+                                # Offer zip file for download
+                                with open(tmp_zip.name, 'rb') as f:
+                                    st.download_button(
+                                        label="Save ZIP File",
+                                        data=f,
+                                        file_name=f"VIA_documents_{keyword}.zip",
+                                        mime="application/zip"
+                                    )
+                        except Exception as e:
+                            st.error(f"Failed to create zip file: {str(e)}")
 
         except Exception as e:
             st.error(f"An error occurred: {str(e)}")
